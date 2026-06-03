@@ -25,6 +25,7 @@ app.use('/api/leads', getLeadRoutes);
 app.use('/api/leads', updateLeadRoutes);
 app.use('/api/leads', deleteLeadsRoutes);
 app.use('/api/leads', getSingleLeadRoutes);
+
 app.use('/api/status', getStatusLeadRoutes);
 
 

@@ -16,6 +16,7 @@ const Dashboard = () => {
 
   const getLeadsStatus = async () => {
     try {
+      // Make API call to fetch dashboard status
       const response = await axios.get(
         "http://localhost:3000/api/status/daskbord-status",
       );
@@ -29,6 +30,7 @@ const Dashboard = () => {
 
   const getLeads = async () => {
     try {
+      // Make API call to fetch leads data
       const response = await axios.get("http://localhost:3000/api/leads");
 
       console.log(response.data);
@@ -39,6 +41,17 @@ const Dashboard = () => {
       setError("Failed to load leads");
     }
   };
+  // Delete api call
+  const deleteLead = async (id) => {
+    try{
+     await axios.delete(`http://localhost:3000/api/leads/${id}`);
+     // Refresh leads after deletion
+     await getLeads();
+
+    }catch(error){
+      console.error("Delete Error:", error);
+    }
+  }
   console.log("Leads Data:", leads);
   useEffect(() => {
     const fetchData = async () => {
@@ -99,7 +112,10 @@ const Dashboard = () => {
 
         {/* Leads Table */}
         <div className="mt-8">
-          <LeadTable leads={leads} />
+          <LeadTable leads={leads}
+            onDelete={deleteLead}
+          
+          />
         </div>
       </div>
       

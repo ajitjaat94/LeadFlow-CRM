@@ -6,8 +6,10 @@ const statusStyles = {
   Lost: "bg-red-500/10    border-red-500/20    text-red-400",
 };
 
+
 const StatusBadge = ({ status }) => {
   const style = statusStyles[status] || statusStyles.New;
+
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold font-mono border ${style}`}

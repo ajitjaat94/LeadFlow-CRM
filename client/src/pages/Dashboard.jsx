@@ -4,11 +4,12 @@ import LeadTable from "../components/LeadTable";
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { CiAlignBottom } from "react-icons/ci";
-import { GiNotebook ,GiCrossMark } from "react-icons/gi";
+import { GiNotebook, GiCrossMark } from "react-icons/gi";
 import { FaListCheck } from "react-icons/fa6";
-
+import {  useNavigate } from "react-router-dom";
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [status, setStatus] = useState({});
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,15 +44,14 @@ const Dashboard = () => {
   };
   // Delete api call
   const deleteLead = async (id) => {
-    try{
-     await axios.delete(`http://localhost:3000/api/leads/${id}`);
-     // Refresh leads after deletion
-     await getLeads();
-
-    }catch(error){
+    try {
+      await axios.delete(`http://localhost:3000/api/leads/${id}`);
+      // Refresh leads after deletion
+      await getLeads();
+    } catch (error) {
       console.error("Delete Error:", error);
     }
-  }
+  };
   console.log("Leads Data:", leads);
   useEffect(() => {
     const fetchData = async () => {
@@ -70,14 +70,16 @@ const Dashboard = () => {
   if (error) {
     return <div className="p-5 text-red-500">{error}</div>;
   }
-// jsx structure for dashboard page
+   const handleEdit = (id) => {
+    navigate(`/lead/${id}`);
+  }
+  // jsx structure for dashboard page
   return (
     <div className="min-h-screen bg-gray-50">
       <Navebar />
 
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-6">Dashboard Overview</h1>
-       
 
         {/* Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -112,13 +114,14 @@ const Dashboard = () => {
 
         {/* Leads Table */}
         <div className="mt-8">
-          <LeadTable leads={leads}
+          <LeadTable
+            leads={leads}
             onDelete={deleteLead}
-          
+            leads={leads}
+            onEdit={handleEdit}
           />
         </div>
       </div>
-      
     </div>
   );
 };

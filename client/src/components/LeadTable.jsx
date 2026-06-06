@@ -73,14 +73,9 @@ const LeadTable = ({ leads = [], onView, onEdit, onDelete }) => {
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="flex items-center gap-2">
+                    
                     <button
-                      onClick={() => onView?.(lead)}
-                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold font-mono border bg-purple-500/10 border-purple-500/25 text-purple-400 hover:bg-purple-500/20 hover:border-purple-400 transition-all duration-200"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => onEdit?.(lead)}
+                      onClick={() => onEdit?.(lead._id)}
                       className="px-3 py-1.5 rounded-lg text-[11px] font-bold font-mono border bg-green-500/7 border-green-500/20 text-green-500 hover:bg-green-500/15 transition-all duration-200"
                     >
                       Edit

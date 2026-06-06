@@ -1,11 +1,9 @@
-import Dashboard from "./pages/Dashboard";
-import Leads from "./pages/Leads";
+import AppRoute from "./routes/AppRoute";
 
 function App() {
   return (
     <>
-      <Dashboard />
-      <Leads />
+      <AppRoute />
     </>
   );
 }

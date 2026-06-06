@@ -32,12 +32,12 @@ const Lead = () => {
       setLoading(true);
       if (id) {
         response = await axios.put(
-          `http://localhost:3000/api/leads/${id}`,
+          `https://leadflow-crm-1pxe.onrender.com/api/leads/${id}`,
           formData,
         );
       } else {
         response = await axios.post(
-          "http://localhost:3000/api/leads",
+          "https://leadflow-crm-1pxe.onrender.com/api/leads",
           formData,
         );
       }
@@ -67,7 +67,7 @@ const Lead = () => {
   useEffect(() => {
     async function fetchLead() {
       if (!id) return;
-      const response = await axios.get(`http://localhost:3000/api/leads/${id}`);
+      const response = await axios.get(`https://leadflow-crm-1pxe.onrender.com/api/leads/${id}`);
       setFormData(response.data.data);
     }
     fetchLead();

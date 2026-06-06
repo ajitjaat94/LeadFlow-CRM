@@ -19,7 +19,7 @@ const Dashboard = () => {
     try {
       // Make API call to fetch dashboard status
       const response = await axios.get(
-        "http://localhost:3000/api/status/daskbord-status",
+        "https://leadflow-crm-1pxe.onrender.com/api/status/daskbord-status",
       );
 
       setStatus(response.data);
@@ -32,7 +32,7 @@ const Dashboard = () => {
   const getLeads = async () => {
     try {
       // Make API call to fetch leads data
-      const response = await axios.get("http://localhost:3000/api/leads");
+      const response = await axios.get("https://leadflow-crm-1pxe.onrender.com/api/leads");
 
       console.log(response.data);
 
@@ -45,7 +45,7 @@ const Dashboard = () => {
   // Delete api call
   const deleteLead = async (id) => {
     try {
-      await axios.delete(`http://localhost:3000/api/leads/${id}`);
+      await axios.delete(`https://leadflow-crm-1pxe.onrender.com/api/leads/${id}`);
       // Refresh leads after deletion
       await getLeads();
     } catch (error) {

@@ -1,4 +1,4 @@
-import { Lead } from "../models/Lead.js";
+import { lead } from "../models/Lead.js";
 //---------------------------------------------------------
 async function leadController(req, res) {
     try {
@@ -6,7 +6,7 @@ async function leadController(req, res) {
         if (!name && !company && !email && !phone) {
             return res.status(400).json({ message: 'All fields are required' })
         };
-        const lead = new Lead({
+        const leads = new lead({
             name,
             company,
             email,
@@ -15,7 +15,7 @@ async function leadController(req, res) {
             notes
 
         });
-        await lead.save();
+        await leads.save();
     } catch (error) {
         res.status(500).json({ message: 'Server error' })
     }

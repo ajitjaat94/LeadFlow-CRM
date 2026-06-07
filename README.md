@@ -232,3 +232,7 @@ Passionate about building modern web applications and solving real-world problem
 If you like this project, consider giving it a star on GitHub.
 
 ⭐ Star this repository to support the project.
+
+## Project image
+<img width="959" height="447" alt="Screenshot 2026-06-06 171607" src="https://github.com/user-attachments/assets/9dbe8a24-0d2f-46b0-85b5-5b058bb2ac2a" />
+

@@ -1,4 +1,4 @@
-import { lead } from "../models/lead.js";
+import { lead } from "../../models/lead.js";
 //---------------------------------------------------------
 async function leadController(req, res) {
     try {

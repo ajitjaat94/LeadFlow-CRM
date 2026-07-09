@@ -12,7 +12,8 @@ import {
 } from "react-icons/md";
 
 const navLinks = [
-  { label: "Dashboard", href: "/", icon: <MdDashboard size={18}  /> },
+  { label: "Home", href: "/", icon: <MdDashboard size={18} /> },
+  { label: "Dashboard", href: "/dashboard", icon: <MdDashboard size={18} /> },
   { label: "Leads", href: "/leads", icon: <MdPeople size={18} /> },
   { label: "Contacts", href: "/contacts", icon: <MdContacts size={18} /> },
   { label: "About", href: "/about", icon: <MdInfoOutline size={18} /> },

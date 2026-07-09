@@ -61,7 +61,7 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl border border-purple-500/20 bg-[#0f0a1f] p-6 shadow-2xl shadow-purple-950/40">
         <div className="mb-5 flex items-center justify-between">
           <div>

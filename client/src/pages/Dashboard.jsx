@@ -2,14 +2,16 @@ import Navebar from "../components/Navebar";
 import StatusCard from "../components/StatusCard";
 import LeadTable from "../components/LeadTable";
 import { useState, useEffect } from "react";
-import axios from "axios";
 import { CiAlignBottom } from "react-icons/ci";
 import { GiNotebook, GiCrossMark } from "react-icons/gi";
 import { FaListCheck } from "react-icons/fa6";
-import {  useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import api from "../services/api";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const authRequired = location.state?.authRequired;
   const [status, setStatus] = useState({});
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,9 +20,7 @@ const Dashboard = () => {
   const getLeadsStatus = async () => {
     try {
       // Make API call to fetch dashboard status
-      const response = await axios.get(
-        "https://leadflow-crm-1pxe.onrender.com/api/status/daskbord-status",
-      );
+      const response = await api.get("/leads/status");
 
       setStatus(response.data);
     } catch (error) {
@@ -32,7 +32,7 @@ const Dashboard = () => {
   const getLeads = async () => {
     try {
       // Make API call to fetch leads data
-      const response = await axios.get("https://leadflow-crm-1pxe.onrender.com/api/leads");
+      const response = await api.get("/leads");
 
       console.log(response.data);
 
@@ -45,7 +45,7 @@ const Dashboard = () => {
   // Delete api call
   const deleteLead = async (id) => {
     try {
-      await axios.delete(`https://leadflow-crm-1pxe.onrender.com/api/leads/${id}`);
+      await api.delete(`/leads/${id}`);
       // Refresh leads after deletion
       await getLeads();
     } catch (error) {
@@ -79,6 +79,11 @@ const Dashboard = () => {
       <Navebar />
 
       <div className="p-6">
+        {authRequired && (
+          <div className="mb-4 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-700">
+            Please login to access your leads and dashboard.
+          </div>
+        )}
         <h1 className="text-2xl font-bold mb-6">Dashboard Overview</h1>
 
         {/* Status Cards */}

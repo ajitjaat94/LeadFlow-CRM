@@ -15,10 +15,10 @@ async function verifyUser(req, res, next) {
 
         const decode = JWT.verify(
             accessToken,
-            process.env.ASSCESS_SECRET
+            process.env.ACCESS_TOKEN_SECRET || process.env.ASSCESS_SECRET || "access-secret"
         );
         req.user = {
-            userId: decode.userId,
+            userId: decode.id || decode.userId || decode._id,
             role: decode.role
         }
         next();

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
 import LeadStructure from "../components/LeadStructure";
 import Navbar from "../components/Navebar";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
+import api from "../services/api";
 
 const Lead = () => {
   const [formData, setFormData] = useState({
@@ -15,6 +15,8 @@ const Lead = () => {
   });
 
   const [loading, setLoading] = useState(false);
+  const { id } = useParams();
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setFormData((prev) => ({
@@ -22,7 +24,6 @@ const Lead = () => {
       [e.target.name]: e.target.value,
     }));
   };
-  const { id } = useParams();
   const handleSubmit = async (e) => {
     e.preventDefault();
     //console.log(formData);
@@ -31,34 +32,30 @@ const Lead = () => {
       let response;
       setLoading(true);
       if (id) {
-        response = await axios.put(
-          `https://leadflow-crm-1pxe.onrender.com/api/leads/${id}`,
-          formData,
-        );
+        response = await api.put(`/leads/${id}`, formData);
       } else {
-        response = await axios.post(
-          "https://leadflow-crm-1pxe.onrender.com/api/leads",
-          formData,
-        );
+        response = await api.post("/leads", formData);
       }
 
-      console.log("Lead Added:", response.data);
+      alert(id ? "Lead updated successfully!" : "Lead added successfully!");
 
-      alert("Lead Added Successfully!");
-
-      setFormData({
-        name: "",
-        company: "",
-        email: "",
-        phone: "",
-        status: "New",
-        notes: "",
-      });
+      if (!id) {
+        setFormData({
+          name: "",
+          company: "",
+          email: "",
+          phone: "",
+          status: "New",
+          notes: "",
+        });
+      } else {
+        navigate("/leads");
+      }
     } catch (error) {
       //console.log(error.response);
 
       console.error("Error:", error);
-      alert(error.response?.data?.message || "Failed to add lead");
+      alert(error.response?.data?.message || "Failed to save lead");
     } finally {
       setLoading(false);
     }
@@ -67,8 +64,13 @@ const Lead = () => {
   useEffect(() => {
     async function fetchLead() {
       if (!id) return;
-      const response = await axios.get(`https://leadflow-crm-1pxe.onrender.com/api/leads/${id}`);
-      setFormData(response.data.data);
+      try {
+        const response = await api.get(`/leads/${id}`);
+        setFormData(response.data.data);
+      } catch (error) {
+        console.error("Error fetching lead", error);
+        alert(error.response?.data?.message || "Failed to load lead");
+      }
     }
     fetchLead();
   }, [id]);

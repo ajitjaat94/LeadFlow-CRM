@@ -1,4 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
+import { FiInstagram, FiMail } from "react-icons/fi";
+import { FaWhatsapp } from "react-icons/fa";
 import Navbar from "../components/Navebar";
 
 const HomePage = () => {
@@ -9,7 +11,7 @@ const HomePage = () => {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1d1136,_#06030d)] text-white">
       <Navbar />
 
-      <main className="mx-auto flex max-w-7xl flex-col px-6 py-16 md:px-10 lg:px-16">
+      <main className="mx-auto flex max-w-7xl flex-col px-4 py-10 sm:px-6 md:px-10 md:py-16 lg:px-16">
         {authRequired && (
           <div className="mb-6 rounded-2xl border border-purple-400/30 bg-purple-500/10 px-4 py-3 text-sm text-purple-200">
             Please login to access your leads and dashboard.
@@ -21,23 +23,23 @@ const HomePage = () => {
             <p className="mb-4 inline-flex rounded-full border border-[#d9ff00]/30 bg-[#d9ff00]/10 px-3 py-1 text-sm font-medium text-[#d9ff00]">
               Smart CRM for growing teams
             </p>
-            <h1 className="text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">
+            <h1 className="text-3xl font-black leading-tight sm:text-4xl lg:text-6xl">
               Manage every lead with clarity and speed.
             </h1>
-            <p className="mt-5 max-w-2xl text-lg text-white/70">
+            <p className="mt-5 max-w-2xl text-base text-white/70 sm:text-lg">
               Track new opportunities, organize follow-ups, and move deals forward from one clean dashboard.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
               <Link
                 to="/dashboard"
-                className="rounded-2xl bg-[#d9ff00] px-5 py-3 font-semibold text-[#02030a] transition hover:opacity-90"
+                className="w-full rounded-2xl bg-[#d9ff00] px-5 py-3 text-center font-semibold text-[#02030a] transition hover:opacity-90 sm:w-auto"
               >
                 Manage Leads
               </Link>
               <Link
                 to="/leads"
-                className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 font-semibold text-white transition hover:border-purple-400 hover:bg-purple-500/10"
+                className="w-full rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-center font-semibold text-white transition hover:border-purple-400 hover:bg-purple-500/10 sm:w-auto"
               >
                 Add Leads
               </Link>
@@ -69,6 +71,34 @@ const HomePage = () => {
       <footer className="border-t border-white/10 bg-black/20 px-6 py-6 text-center text-sm text-white/60 md:px-10 lg:px-16">
         <p>LeadFlow CRM helps your team capture opportunities, follow up faster, and close more deals.</p>
       </footer>
+
+      <div className="fixed right-4 top-[30%] z-50 hidden flex-col gap-3 rounded-full bg-black/40 p-2 shadow-2xl shadow-black/40 backdrop-blur-lg md:flex">
+        <a
+          href="https://wa.me/919876543210"
+          target="_blank"
+          rel="noreferrer"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+          aria-label="WhatsApp"
+        >
+          <FaWhatsapp size={20} />
+        </a>
+        <a
+          href="https://instagram.com/leadflowcrm"
+          target="_blank"
+          rel="noreferrer"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+          aria-label="Instagram"
+        >
+          <FiInstagram size={20} />
+        </a>
+        <a
+          href="mailto:support@leadflowcrm.com"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+          aria-label="Email"
+        >
+          <FiMail size={20} />
+        </a>
+      </div>
     </div>
   );
 };

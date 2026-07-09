@@ -22,7 +22,7 @@ const StatusBadge = ({ status }) => {
 
 const LeadTable = ({ leads = [], onView, onEdit, onDelete }) => {
   return (
-    <div className="bg-white border border-purple-500/20 rounded-2xl overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-purple-500/20 bg-white">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
         <h2 className="text-sm font-extrabold text-black font-mono tracking-tight">

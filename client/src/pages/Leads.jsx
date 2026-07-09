@@ -76,20 +76,33 @@ const Lead = () => {
   }, [id]);
 
   return (
-    <div className="">
+    <div className="min-h-screen bg-[#f7f6fb]">
       <Navbar />
-      <div className="min-h-screen bg-gray-100 flex justify-center items-start p-6">
-        <form
-          onSubmit={handleSubmit}
-          className="w-full max-w-2xl bg-white rounded-xl shadow-lg p-6"
-        >
-          <LeadStructure
-            formData={formData}
-            handleChange={handleChange}
-            handleSubmit={handleSubmit}
-            loading={loading}
-          />
-        </form>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+        <section className="rounded-3xl bg-white/90 p-6 shadow-xl shadow-purple-950/10 backdrop-blur-xl sm:p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">Add or Edit Lead</h1>
+              <p className="mt-2 text-sm text-slate-500">
+                Use this page to create a new lead or update an existing one. All fields are saved to your account.
+              </p>
+            </div>
+            <div className="rounded-3xl bg-purple-500/10 px-4 py-3 text-sm font-medium text-purple-700">
+              {id ? "Edit lead details" : "Create new lead"}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl bg-white p-4 shadow-lg sm:p-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <LeadStructure
+              formData={formData}
+              handleChange={handleChange}
+              handleSubmit={handleSubmit}
+              loading={loading}
+            />
+          </form>
+        </section>
       </div>
     </div>
   );

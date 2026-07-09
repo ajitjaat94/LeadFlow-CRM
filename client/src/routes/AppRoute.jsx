@@ -3,6 +3,8 @@ import Dashboard from "../pages/Dashboard";
 import Leads from "../pages/Leads";
 import ProtectedRoute from "../components/ProtectedRoute";
 import HomePage from "../pages/HomePage";
+import Contact from "../pages/Contact";
+import About from "../pages/About";
 
 const AppRoute = () => {
   return (
@@ -25,6 +27,8 @@ const AppRoute = () => {
           </ProtectedRoute>
         }
       />
+      <Route path="/about" element={<About />} />
+      <Route path="/contact" element={<Contact />} />
     </Routes>
   );
 };

@@ -15,8 +15,8 @@ const navLinks = [
   { label: "Home", href: "/", icon: <MdDashboard size={18} /> },
   { label: "Dashboard", href: "/dashboard", icon: <MdDashboard size={18} /> },
   { label: "Leads", href: "/leads", icon: <MdPeople size={18} /> },
-  { label: "Contacts", href: "/contacts", icon: <MdContacts size={18} /> },
   { label: "About", href: "/about", icon: <MdInfoOutline size={18} /> },
+  { label: "Contact", href: "/contact", icon: <MdContacts size={18} /> },
 ];
 
 const Navbar = () => {
@@ -49,11 +49,11 @@ const Navbar = () => {
   return (
     <>
       {/* Main Navbar */}
-      <nav className="sticky top-0 z-50 flex items-center justify-between px-6 h-16 bg-[#02030a]/95 border-b border-purple-500/20 backdrop-blur-md">
+      <nav className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-purple-500/20 bg-[#02030a]/95 px-4 backdrop-blur-md sm:px-6">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 group">
           <span className="w-2 h-2 rounded-full bg-[#d9ff00] group-hover:scale-125 transition-transform duration-300" />
-          <span className="text-base font-extrabold tracking-tight text-white font-mono">
+          <span className="text-sm font-extrabold tracking-tight text-white font-mono sm:text-base">
             Lead<span className="text-purple-400">flow</span> CRM
           </span>
         </Link>
@@ -77,7 +77,7 @@ const Navbar = () => {
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Notification Bell */}
           <button className="relative w-9 h-9 flex items-center justify-center rounded-xl border border-white/10 text-white/60 hover:text-white hover:border-purple-500/40 transition-all duration-200">
             <IoIosNotificationsOutline size={20} />
@@ -92,7 +92,7 @@ const Navbar = () => {
               </div>
               <button
                 onClick={handleLogout}
-                className="rounded-lg border border-white/10 px-3 py-2 text-sm text-white/70 hover:border-purple-400 hover:text-white"
+                className="hidden rounded-lg border border-white/10 px-3 py-2 text-sm text-white/70 hover:border-purple-400 hover:text-white sm:block"
               >
                 Logout
               </button>

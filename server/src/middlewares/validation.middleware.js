@@ -6,7 +6,9 @@ export const validatorMiddleware = (req, res, next) => {
 
     if (!error.isEmpty()) {
         return res.status(400).json({
-            error: error.array()
+            success: false,
+            message: "Validation failed",
+            error: error.array(),
         })
     }
     next();

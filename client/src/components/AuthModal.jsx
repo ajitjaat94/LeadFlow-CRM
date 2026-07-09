@@ -54,7 +54,15 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
       setMessage(response.message || "Success");
       onClose();
     } catch (err) {
-      setError(err?.response?.data?.message || "Authentication failed");
+      const serverData = err?.response?.data;
+      const validationErrors = serverData?.error;
+      const validationMessage = Array.isArray(validationErrors)
+        ? validationErrors.map((item) => item.msg || item.message).join(" | ")
+        : null;
+
+      setError(
+        validationMessage || serverData?.message || serverData?.error || "Authentication failed"
+      );
     } finally {
       setLoading(false);
     }

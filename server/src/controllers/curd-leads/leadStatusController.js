@@ -2,11 +2,12 @@ import { lead } from "../../models/lead.js";
 //---------------------------------------------------------
 async function getLeadStatusController(req, res) {
     try {
-        const count = await lead.countDocuments();
-        const newLead = await lead.countDocuments({ status: 'New' });
-        const contactedLead = await lead.countDocuments({ status: 'Contacted' });
-        const qualifiedLead = await lead.countDocuments({ status: 'Qualified' });
-        const lostLead = await lead.countDocuments({ status: 'Lost' });
+        const userFilter = { user: req.user?.userId };
+        const count = await lead.countDocuments(userFilter);
+        const newLead = await lead.countDocuments({ ...userFilter, status: 'New' });
+        const contactedLead = await lead.countDocuments({ ...userFilter, status: 'Contacted' });
+        const qualifiedLead = await lead.countDocuments({ ...userFilter, status: 'Qualified' });
+        const lostLead = await lead.countDocuments({ ...userFilter, status: 'Lost' });
 
         return res.status(200).json({
         totalLeads: count,

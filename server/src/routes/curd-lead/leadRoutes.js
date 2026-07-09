@@ -5,9 +5,11 @@ import { getSingleLeadApi } from "../../controllers/curd-leads/getSingleLeadCont
 import { updateLeadApi } from "../../controllers/curd-leads/updateLeadController.js";
 import { deleteLeadsApi } from "../../controllers/curd-leads/deleteLeadsController.js";
 import { getLeadStatusApi } from "../../controllers/curd-leads/leadStatusController.js";
+import { verifyMeddleware } from "../../middlewares/verify-User.middlewares.js";
 
 const router = express.Router();
 
+router.use(verifyMeddleware);
 router.post('/', leadApi);
 router.get('/status', getLeadStatusApi);
 router.get('/', getLeadsApi);

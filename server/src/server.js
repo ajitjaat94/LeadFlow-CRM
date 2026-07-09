@@ -5,6 +5,7 @@ dotenv.config();
 import cors from 'cors';
 import connectDB from './config/db.js';
 import { leadRoutes } from './routes/curd-lead/leadRoutes.js';
+import { authRoutes } from './routes/auth/auth.routes.js';
 
 //------------------------------------------------
 //Initialize express app
@@ -15,6 +16,9 @@ app.use(express.json())
 app.use(cors())
 //-------------------------------------------------
 //Routes
+//Auth Routes
+app.use('/api/auth', authRoutes);
+
 //Lead Routes
 app.use('/api/leads', leadRoutes);
 

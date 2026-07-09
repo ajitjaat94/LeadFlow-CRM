@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { IoIosNotificationsOutline } from "react-icons/io";
 import { HiMenuAlt3, HiX } from "react-icons/hi";
+import AuthModal from "./AuthModal";
 import {
   MdDashboard,
   MdPeople,
@@ -19,7 +20,30 @@ const navLinks = [
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [user, setUser] = useState(null);
   const { pathname } = useLocation();
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
+
+  const handleAuthSuccess = (authData) => {
+    localStorage.setItem("accessToken", authData.accessToken);
+    localStorage.setItem("refreshToken", authData.refreshToken);
+    localStorage.setItem("user", JSON.stringify(authData.user));
+    setUser(authData.user);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("user");
+    setUser(null);
+  };
 
   return (
     <>
@@ -60,10 +84,26 @@ const Navbar = () => {
             <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#d9ff00]" />
           </button>
 
-          {/* Avatar */}
-          <div className="w-9 h-9 rounded-xl bg-linear-to-br from-purple-500 to-purple-700 border border-purple-500/40 flex items-center justify-center text-xs font-extrabold text-white tracking-wide cursor-pointer hover:border-purple-400 transition-colors duration-200">
-            AJ
-          </div>
+          {user ? (
+            <>
+              <div className="w-9 h-9 rounded-xl bg-linear-to-br from-purple-500 to-purple-700 border border-purple-500/40 flex items-center justify-center text-xs font-extrabold text-white tracking-wide cursor-pointer hover:border-purple-400 transition-colors duration-200">
+                {user.username?.slice(0, 2).toUpperCase() || "U"}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="rounded-lg border border-white/10 px-3 py-2 text-sm text-white/70 hover:border-purple-400 hover:text-white"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setAuthModalOpen(true)}
+              className="rounded-lg bg-[#d9ff00] px-3 py-2 text-sm font-semibold text-[#02030a] transition hover:opacity-90"
+            >
+              Login
+            </button>
+          )}
 
           {/* Mobile Burger */}
           <button
@@ -75,6 +115,12 @@ const Navbar = () => {
           </button>
         </div>
       </nav>
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
 
       {/* Mobile Dropdown Menu */}
       {menuOpen && (

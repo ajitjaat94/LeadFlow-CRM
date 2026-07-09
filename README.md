@@ -78,6 +78,9 @@ git clone https://github.com/ajitjaat94/LeadFlow-CRM.git
 Install dependencies
 
 ```bash
+git clone https://github.com/ajitjaat94/LeadFlow-CRM.git
+cd LeadFlow-CRM
+
 cd server
 npm install
 
@@ -85,19 +88,27 @@ cd ../client
 npm install
 ```
 
-Create a `.env` file inside the server folder.
-
-```env
-PORT=
-MONGODB_URI=
-JWT_SECRET=
-JWT_REFRESH_SECRET=
-CLIENT_URL=
-```
-
-Run the project
+Create environment files from the examples.
 
 ```bash
+cd server
+copy .env.example .env
+
+cd ../client
+copy .env.example .env
+```
+
+Update the new `.env` files with your values. Example values are already provided in the `.env.example` files.
+
+Run the project locally
+
+```bash
+# start the backend
+cd server
+npm run dev
+
+# open a second terminal and start the frontend
+cd ../client
 npm run dev
 ```
 

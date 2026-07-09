@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://leadflow-crm-1pxe.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:3000/api" : "https://leadflow-crm-1pxe.onrender.com/api");
 
 const api = axios.create({
   baseURL: API_BASE_URL,

@@ -106,7 +106,12 @@ const Dashboard = () => {
 
   const handleEdit = (id) => {
     navigate(`/lead/${id}`);
-  }
+  };
+
+  const handleView = (id) => {
+    navigate(`/lead/${id}`);
+  };
+
   // jsx structure for dashboard page
   return (
     <div className="min-h-screen bg-gray-50">
@@ -180,6 +185,7 @@ const Dashboard = () => {
         <div className="mt-8">
           <LeadTable
             leads={filteredLeads}
+            onView={handleView}
             onDelete={deleteLead}
             onEdit={handleEdit}
           />

@@ -68,6 +68,9 @@ const LeadTable = ({ leads = [], onView, onEdit, onDelete }) => {
                 <td className="px-4 py-3 text-sm text-black/60 whitespace-nowrap">
                   {lead.phone}
                 </td>
+                <td className="px-4 py-3 text-sm text-black/60 whitespace-nowrap max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap">
+                  {lead.notes || "No notes"}
+                </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <StatusBadge status={lead.status} />
                 </td>
@@ -101,7 +104,7 @@ const LeadTable = ({ leads = [], onView, onEdit, onDelete }) => {
             key={lead._id}
             className="p-4 hover:bg-purple-500/10 transition-colors duration-200"
           >
-            <div className="flex items-start justify-between mb-3">
+            <div className="flex items-start justify-between mb-3 gap-4">
               <div>
                 <p className="text-sm font-bold text-black">{lead.name}</p>
                 <p className="text-xs text-black/45 mt-0.5">{lead.company}</p>
@@ -112,6 +115,7 @@ const LeadTable = ({ leads = [], onView, onEdit, onDelete }) => {
             <div className="space-y-1 mb-4">
               <p className="text-xs text-black/40">{lead.email}</p>
               <p className="text-xs text-black/40">{lead.phone}</p>
+              <p className="text-xs text-black/60 line-clamp-2">{lead.notes || "No notes"}</p>
             </div>
 
             <div className="flex items-center gap-2">

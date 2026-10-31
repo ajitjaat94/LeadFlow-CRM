@@ -1,4 +1,5 @@
-import { Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
+import { Routes, Route, useLocation } from "react-router-dom";
 import Dashboard from "../pages/Dashboard";
 import Leads from "../pages/Leads";
 import LeadForm from "../pages/LeadForm";
@@ -15,6 +16,35 @@ import Team from "../pages/Team";
 import JoinWorkspace from "../pages/JoinWorkspace";
 
 const AppRoute = () => {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const titles = {
+      "/": "Dashboard",
+      "/dashboard": "Dashboard",
+      "/leads": "Leads",
+      "/leads/new": "Add lead",
+      "/follow-ups": "Follow-ups",
+      "/contacts": "Contacts",
+      "/deals": "Deals",
+      "/calendar": "Calendar",
+      "/reports": "Reports",
+      "/team": "Team",
+      "/settings": "Settings",
+      "/companies": "Companies",
+      "/tasks": "Tasks",
+      "/automation": "Automation",
+      "/about": "About",
+      "/contact": "Contact",
+    };
+    const title = pathname.startsWith("/lead/")
+      ? "Edit lead"
+      : pathname.startsWith("/join/")
+        ? "Join workspace"
+        : titles[pathname] || "Workspace";
+    document.title = `LeadFlow CRM | ${title}`;
+  }, [pathname]);
+
   return (
     <Routes>
       <Route path="/" element={<Dashboard />} />

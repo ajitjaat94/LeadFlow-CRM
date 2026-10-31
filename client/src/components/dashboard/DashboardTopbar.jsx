@@ -20,6 +20,7 @@ const DashboardTopbar = ({
   onNotificationsClick,
   searchPlaceholder = "Search leads, contacts, deals...",
   sidebarOpen = false,
+  hideSearch = false,
 }) => {
   const navigate = useNavigate();
   const [authModalOpen, setAuthModalOpen] = useState(authRequired);
@@ -34,6 +35,7 @@ const DashboardTopbar = ({
   const searchInputRef = useRef(null);
 
   useEffect(() => {
+    if (hideSearch) return undefined;
     const focusSearch = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -42,7 +44,7 @@ const DashboardTopbar = ({
     };
     window.addEventListener("keydown", focusSearch);
     return () => window.removeEventListener("keydown", focusSearch);
-  }, []);
+  }, [hideSearch]);
 
   const handleAuthSuccess = (authData) => {
     const greetingExpiresAt = Date.now() + 2 * 60 * 1000;
@@ -79,17 +81,19 @@ const DashboardTopbar = ({
           <MdMenu size={22} />
         </button>
         )}
-        <div className="crm-search-wrap">
-          <MdSearch size={20} />
-          <input
-            ref={searchInputRef}
-            value={searchTerm}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder.replace("…", "").replace("...", "")}
-          />
-          <kbd>Ctrl K</kbd>
-        </div>
+        {!hideSearch && (
+          <div className="crm-search-wrap">
+            <MdSearch size={20} />
+            <input
+              ref={searchInputRef}
+              value={searchTerm}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder.replace("…", "").replace("...", "")}
+            />
+            <kbd>Ctrl K</kbd>
+          </div>
+        )}
         <div className="crm-topbar-actions">
           <button className="crm-icon-button" type="button" aria-label={onNotificationsClick ? (user ? "Open follow-ups" : "Sign in to view follow-ups") : "Notifications"} onClick={onNotificationsClick ? () => {
             if (!user) setAuthModalOpen(true);

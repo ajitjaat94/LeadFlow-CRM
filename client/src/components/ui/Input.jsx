@@ -1,6 +1,7 @@
 const Input = ({
   value,
   name,
+  id,
   type,
   required,
   onChange,
@@ -11,6 +12,7 @@ const Input = ({
     <input
       type={type}
       name={name}
+      id={id}
       value={value}
       onChange={onChange}
       required={required}

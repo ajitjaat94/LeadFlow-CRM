@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import LeadStructure from "../components/LeadStructure";
-import Navbar from "../components/Navebar";
 import { useParams, useNavigate } from "react-router-dom";
 import { cancelFollowUp, completeFollowUp, createLead, getLead, getLeadFollowUps, updateLead } from "../services/api";
 import { getLeadFields } from "../services/api";
 import FollowUpCard from "../components/follow-ups/FollowUpCard";
 import FollowUpModal from "../components/follow-ups/FollowUpModal";
+import DashboardSidebar from "../components/dashboard/DashboardSidebar";
+import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 
 const emptyLead = {
   name: "",
@@ -19,6 +20,7 @@ const emptyLead = {
 const LeadForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
   const [customFields, setCustomFields] = useState([]);
   const [formData, setFormData] = useState({ ...emptyLead, customFields: {} });
   const [loading, setLoading] = useState(false);
@@ -27,6 +29,14 @@ const LeadForm = () => {
   const [followUps, setFollowUps] = useState([]);
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
   const [editingFollowUp, setEditingFollowUp] = useState(null);
+
+  useEffect(() => {
+    const closeSidebarOnMobile = () => {
+      if (window.innerWidth <= 760) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", closeSidebarOnMobile);
+    return () => window.removeEventListener("resize", closeSidebarOnMobile);
+  }, []);
 
   useEffect(() => {
     getLeadFields()
@@ -86,29 +96,41 @@ const LeadForm = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f6fb]">
-      <Navbar />
-      <div className="lead-page-wrap">
-        <section className="lead-page-header">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
+      <DashboardSidebar
+        isOpen={sidebarOpen}
+        onClose={() => {
+          if (window.innerWidth <= 760) setSidebarOpen(false);
+        }}
+        onToggle={() => setSidebarOpen((open) => !open)}
+      />
+      <main className="crm-main">
+        <DashboardTopbar
+          hideSearch
+          onNotificationsClick={() => navigate("/follow-ups")}
+          onToggleSidebar={() => setSidebarOpen((open) => !open)}
+          sidebarOpen={sidebarOpen}
+        />
+        <div className="crm-page crm-dashboard-page space-y-4">
+          <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div>
-              <span className="crm-eyebrow">Lead management</span>
-              <h1>{id ? "Edit lead" : "Add a new lead"}</h1>
-              <p>{id ? "Update the details and keep this opportunity moving." : "Capture the important details and keep your pipeline moving."}</p>
+              <span className="crm-dashboard-eyebrow">Lead management</span>
+              <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">{id ? "Edit lead" : "Add a new lead"}</h1>
+              <p className="mt-1 text-sm text-slate-600">{id ? "Update the details and keep this opportunity moving." : "Capture the important details and keep your pipeline moving."}</p>
             </div>
-            <button className="lead-back-button" type="button" onClick={() => navigate("/leads")}>Back to leads</button>
-          </div>
-        </section>
-        <section className="lead-form-card">
-          {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div>}
-          {loadingLead ? <p className="py-10 text-center text-sm text-slate-500">Loading lead...</p> : (
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <LeadStructure formData={formData} handleChange={handleChange} loading={loading} customFields={customFields} onCustomFieldsChange={handleCustomFieldsChange} onCustomFieldValuesChange={(values) => setFormData((previous) => ({ ...previous, customFields: values }))} />
-          </form>
-          )}
-        </section>
-        {id && <section className="crm-panel lead-detail-followups"><div className="crm-panel-heading"><div><h2>Follow-ups</h2><p>Scheduled activity for this lead</p></div><button className="crm-add-button" type="button" onClick={() => setFollowUpModalOpen(true)}>+ Schedule follow-up</button></div>{followUps.length === 0 ? <p className="follow-up-empty">No follow-ups scheduled.</p> : <div className="follow-up-list">{followUps.map((item) => <FollowUpCard key={item._id} item={item} onComplete={handleCompleteFollowUp} onEdit={(followUp) => { setEditingFollowUp(followUp); setFollowUpModalOpen(true); }} onCancel={handleCancelFollowUp} />)}</div>}</section>}
-      </div>
+            <button className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" type="button" onClick={() => navigate("/leads")}>Back to leads</button>
+          </header>
+          <section className="lead-form-card">
+            {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div>}
+            {loadingLead ? <p className="py-10 text-center text-sm text-slate-500">Loading lead...</p> : (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <LeadStructure formData={formData} handleChange={handleChange} loading={loading} customFields={customFields} onCustomFieldsChange={handleCustomFieldsChange} onCustomFieldValuesChange={(values) => setFormData((previous) => ({ ...previous, customFields: values }))} />
+            </form>
+            )}
+          </section>
+          {id && <section className="crm-panel lead-detail-followups"><div className="crm-panel-heading"><div><h2>Follow-ups</h2><p>Scheduled activity for this lead</p></div><button className="crm-add-button" type="button" onClick={() => setFollowUpModalOpen(true)}>+ Schedule follow-up</button></div>{followUps.length === 0 ? <p className="follow-up-empty">No follow-ups scheduled.</p> : <div className="follow-up-list">{followUps.map((item) => <FollowUpCard key={item._id} item={item} onComplete={handleCompleteFollowUp} onEdit={(followUp) => { setEditingFollowUp(followUp); setFollowUpModalOpen(true); }} onCancel={handleCancelFollowUp} />)}</div>}</section>}
+        </div>
+      </main>
       {followUpModalOpen && <FollowUpModal lead={formData} followUp={editingFollowUp} onClose={() => { setFollowUpModalOpen(false); setEditingFollowUp(null); }} onSaved={handleFollowUpSaved} />}
     </div>
   );

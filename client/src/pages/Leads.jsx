@@ -109,6 +109,14 @@ const Leads = () => {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
+    const closeSidebarOnMobile = () => {
+      if (window.innerWidth <= 760) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", closeSidebarOnMobile);
+    return () => window.removeEventListener("resize", closeSidebarOnMobile);
+  }, []);
+
+  useEffect(() => {
     Promise.all([getLeads(), getLeadFields()])
       .then(([leadData, fieldData]) => {
         setCustomFields(fieldData || []);
@@ -128,11 +136,13 @@ const Leads = () => {
       .finally(() => setLoading(false));
   }, [location.state?.savedLead]);
 
-  useEffect(() => {
-    if (!location.state?.openImport) return;
+  const showImportPrompt = Boolean(location.state?.openImport);
+  const clearImportPrompt = () => navigate(location.pathname, { replace: true, state: {} });
+
+  const openFilePicker = () => {
     fileInputRef.current?.click();
-    navigate(location.pathname, { replace: true, state: {} });
-  }, [location.pathname, location.state?.openImport, navigate]);
+    if (showImportPrompt) clearImportPrompt();
+  };
   const filteredLeads = leads.filter((lead) =>
     [lead.name, lead.company, lead.email, lead.phone, lead.status]
       .some((value) => value?.toLowerCase().includes(searchTerm.toLowerCase())),
@@ -296,12 +306,22 @@ const Leads = () => {
             </div>
             <div className="relative grid w-full grid-cols-2 gap-2 min-[520px]:flex min-[520px]:w-auto min-[520px]:flex-wrap min-[520px]:items-center min-[520px]:justify-end">
               <input ref={fileInputRef} className="hidden" type="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportFile} />
-              <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:border-blue-700 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={importing}><MdFileUpload size={17} />{importing ? "Importing..." : "Import"}</button>
+              <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:border-blue-700 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60" type="button" onClick={openFilePicker} disabled={importing}><MdFileUpload size={17} />{importing ? "Importing..." : "Import"}</button>
               <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60" type="button" onClick={handleImportGoogleSheet} disabled={importing}><MdLink size={17} />Sheets</button>
               <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2" type="button" onClick={handleExportCSV}><MdFileDownload size={17} />CSV</button>
               <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 text-sm font-semibold text-violet-800 transition hover:border-violet-300 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:ring-offset-2" type="button" onClick={handleExportExcel}><MdFileDownload size={17} />Excel</button>
             </div>
           </section>
+
+          {showImportPrompt && (
+            <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3" role="status" aria-label="Import leads">
+              <p className="text-sm font-medium text-slate-800">Choose a CSV or Excel file to import leads.</p>
+              <div className="flex gap-2">
+                <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={openFilePicker}><MdFileUpload size={16} /> Choose file</button>
+                <button type="button" className="inline-flex min-h-9 items-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={clearImportPrompt}>Cancel</button>
+              </div>
+            </section>
+          )}
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">

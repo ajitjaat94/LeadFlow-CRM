@@ -12,7 +12,7 @@ import {
   MdRefresh,
   MdTrendingDown,
 } from "react-icons/md";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import { LEAD_STATUSES } from "../data/leadStatuses";
@@ -41,6 +41,13 @@ const parseDateKey = (key) => {
 const dateOrdinal = (key) => {
   const [year, month, day] = key.split("-").map(Number);
   return Math.floor(Date.UTC(year, month - 1, day) / DAY_MS);
+};
+
+const isValidDateKey = (key) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key || "")) return false;
+  const [year, month, day] = key.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 };
 
 const getRangeForPreset = (days, today = new Date()) => {
@@ -127,12 +134,22 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
+    const closeSidebarOnMobile = () => {
+      if (window.innerWidth <= 760) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", closeSidebarOnMobile);
+    return () => window.removeEventListener("resize", closeSidebarOnMobile);
+  }, []);
+
+  useEffect(() => {
     if (!accessToken) {
       return undefined;
     }
 
     let active = true;
     const loadDashboard = async () => {
+      setLeadError("");
+      setTaskError("");
       const [leadResult, followUpResult] = await Promise.allSettled([getLeads(), getDashboardFollowUps()]);
       if (!active) return;
 
@@ -142,6 +159,7 @@ const Dashboard = () => {
         const error = leadResult.status === "rejected"
           ? leadResult.reason
           : new Error("The leads API returned an invalid response.");
+        setLeads([]);
         setLeadError(toUserFacingLoadError(error, "Lead data"));
       }
 
@@ -151,6 +169,7 @@ const Dashboard = () => {
         const error = followUpResult.status === "rejected"
           ? followUpResult.reason
           : new Error("The follow-ups API returned an invalid response.");
+        setFollowUps([]);
         setTaskError(toUserFacingLoadError(error, "Follow-up data"));
       }
 
@@ -199,7 +218,7 @@ const Dashboard = () => {
       setFollowUps((current) => current.map((followUp) => (
         followUp._id === item._id ? { ...followUp, status: "Completed", completedAt: new Date().toISOString() } : followUp
       )));
-      setNotice(`Completed ${item.type.toLowerCase()} follow-up${item.leadId?.name ? ` for ${item.leadId.name}` : ""}.`);
+      setNotice(`Completed ${String(item.type || "follow-up").toLowerCase()}${item.leadId?.name ? ` for ${item.leadId.name}` : ""}.`);
     } catch (error) {
       setTaskError(error.response?.data?.message || "Unable to complete this follow-up. Please retry.");
     } finally {
@@ -212,10 +231,12 @@ const Dashboard = () => {
     const preset = RANGE_PRESETS.find((item) => item.value === rangePreset) || RANGE_PRESETS[1];
     return getRangeForPreset(preset.days);
   }, [customRange, rangePreset]);
+  const todayKey = toDateKey(new Date());
   const rangeValid = Boolean(
-    currentRange.start
-    && currentRange.end
-    && currentRange.start <= currentRange.end,
+    isValidDateKey(currentRange.start)
+    && isValidDateKey(currentRange.end)
+    && currentRange.start <= currentRange.end
+    && currentRange.end <= todayKey,
   );
   const rangeLabel = rangePreset === "custom"
     ? `${formatDate(currentRange.start, { day: "numeric", month: "short", year: "numeric" })} – ${formatDate(currentRange.end, { day: "numeric", month: "short", year: "numeric" })}`
@@ -225,7 +246,9 @@ const Dashboard = () => {
     if (!rangeValid) return [];
     return leads.filter((record) => {
       if (!record.createdAt) return false;
-      const createdDate = toDateKey(new Date(record.createdAt));
+      const timestamp = new Date(record.createdAt);
+      if (Number.isNaN(timestamp.getTime())) return false;
+      const createdDate = toDateKey(timestamp);
       return createdDate >= currentRange.start && createdDate <= currentRange.end;
     });
   }, [currentRange.end, currentRange.start, leads, rangeValid]);
@@ -269,7 +292,9 @@ const Dashboard = () => {
 
     inRangeLeads.forEach((record) => {
       if (!record.createdAt) return;
-      const createdDate = toDateKey(new Date(record.createdAt));
+      const timestamp = new Date(record.createdAt);
+      if (Number.isNaN(timestamp.getTime())) return;
+      const createdDate = toDateKey(timestamp);
       const offset = dateOrdinal(createdDate) - dateOrdinal(currentRange.start);
       const index = Math.min(bucketCount - 1, Math.floor((offset * bucketCount) / totalDays));
       if (index >= 0) values[index] += 1;
@@ -321,9 +346,8 @@ const Dashboard = () => {
       .some((value) => String(value || "").toLocaleLowerCase().includes(search))
   )), [inRangeLeads, search]);
   const recentLeads = useMemo(() => [...matchingLeads].sort(
-    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+    (a, b) => (new Date(b.createdAt || 0).getTime() || 0) - (new Date(a.createdAt || 0).getTime() || 0),
   ).slice(0, 5), [matchingLeads]);
-  const todayKey = toDateKey(new Date());
   const now = new Date();
   const nowTaskTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   const pendingFollowUps = useMemo(() => followUps
@@ -334,9 +358,6 @@ const Dashboard = () => {
     Today: pendingFollowUps.filter((item) => item.scheduledDate === todayKey && item.scheduledTime >= nowTaskTime),
     Upcoming: pendingFollowUps.filter((item) => item.scheduledDate > todayKey),
   }), [nowTaskTime, pendingFollowUps, todayKey]);
-  const recentCreated = useMemo(() => [...leads]
-    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-    .slice(0, 5), [leads]);
   const userName = (() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null")?.username?.split(" ")[0] || "";
@@ -373,6 +394,9 @@ const Dashboard = () => {
       link.href = url;
       link.download = `leads-${currentRange.start}-to-${currentRange.end}.csv`;
       link.click();
+      const downloadUrl = url;
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      url = "";
       setNotice(`Exported ${matchingLeads.length} lead${matchingLeads.length === 1 ? "" : "s"} for ${rangeLabel}${search ? " matching your search" : ""}.`);
     } catch (error) {
       console.error("Unable to export dashboard leads", error);
@@ -488,7 +512,7 @@ const Dashboard = () => {
                     <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <h2 id="dashboard-summary-title" className="text-sm font-bold text-slate-900">Lead summary</h2>
-                        <p className="mt-1 text-xs text-slate-600">{rangeValid ? `${rangeLabel} · leads created in this period; statuses are current` : "Choose a valid date range."}</p>
+                        <p className="mt-1 text-xs text-slate-600">{rangeValid ? `Leads created during ${rangeLabel}` : "Choose a valid date range."}</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         {refreshing && <span className="text-xs font-medium text-slate-600" role="status"><MdRefresh className="mr-1 inline animate-spin" />Refreshing…</span>}
@@ -524,29 +548,29 @@ const Dashboard = () => {
                         )}
                       </div>
                     </div>
-                    {rangePreset === "custom" && <p className="mb-3 text-xs text-slate-500">Dates use your device time zone ({Intl.DateTimeFormat().resolvedOptions().timeZone || "local time"}).</p>}
-                    {!rangeValid && <p className="mb-3 text-xs font-medium text-rose-700" role="alert">Start date must be on or before the end date.</p>}
+                    {rangePreset === "custom" && <p className="mb-3 text-xs text-slate-600">Dates use your local time zone ({Intl.DateTimeFormat().resolvedOptions().timeZone || "local time"}).</p>}
+                    {!rangeValid && <p className="mb-3 text-xs font-medium text-rose-700" role="alert">Choose a valid date range ending today or earlier.</p>}
 
                     <div className="crm-metrics-grid">
                       <article className="crm-dashboard-metric crm-metric-blue">
                         <span className="crm-dashboard-metric-icon"><MdGroups size={21} /></span>
-                        <p>Total leads</p><strong>{leadMetrics.total}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? `Created ${rangeLabel.toLowerCase()}` : "No data yet"}</span>
+                        <p>Total leads</p><strong>{rangeValid ? leadMetrics.total : "—"}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : leadMetrics.total ? `Created ${rangeLabel.toLowerCase()}` : "No data yet"}</span>
                       </article>
                       <article className="crm-dashboard-metric crm-metric-violet">
                         <span className="crm-dashboard-metric-icon"><MdCheckCircle size={21} /></span>
-                        <p>Won</p><strong>{leadMetrics.won}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
+                        <p>Won</p><strong>{rangeValid ? leadMetrics.won : "—"}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
                       </article>
                       <article className="crm-dashboard-metric crm-metric-sky">
                         <span className="crm-dashboard-metric-icon"><MdBolt size={21} /></span>
-                        <p>Active</p><strong>{leadMetrics.active}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? "Not marked Won or Lost" : "No data yet"}</span>
+                        <p>Active</p><strong>{rangeValid ? leadMetrics.active : "—"}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : leadMetrics.total ? "Not marked Won or Lost" : "No data yet"}</span>
                       </article>
                       <article className="crm-dashboard-metric crm-metric-rose">
                         <span className="crm-dashboard-metric-icon"><MdTrendingDown size={21} /></span>
-                        <p>Lost</p><strong>{leadMetrics.lost}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
+                        <p>Lost</p><strong>{rangeValid ? leadMetrics.lost : "—"}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
                       </article>
                     </div>
                   </section>
@@ -554,7 +578,7 @@ const Dashboard = () => {
                   <div className="crm-dashboard-grid crm-dashboard-grid-primary">
                     <section className="crm-dashboard-card" aria-labelledby="dashboard-trend-title">
                       <div className="crm-dashboard-card-heading">
-                        <div><h2 id="dashboard-trend-title">Lead creation trend</h2><p>Leads created by date · conversion timestamps are not stored · {rangeLabel}</p></div>
+                        <div><h2 id="dashboard-trend-title">Lead creation trend</h2><p>Leads created during {rangeLabel}</p></div>
                       </div>
                       {chartData.hasActivity ? (
                         <>
@@ -579,7 +603,7 @@ const Dashboard = () => {
                       ) : (
                         <div className="flex min-h-20 items-center gap-3 px-5 py-5 text-sm text-slate-600">
                           <MdTrendingDown size={19} />
-                          <span>{rangeValid && leads.length ? "No leads were created in this period." : "No lead creation data for this period yet."}</span>
+                          <span>{!rangeValid ? "Choose a valid date range to view lead activity." : rangeValid && leads.length ? "No leads were created in this period." : "No lead creation data for this period yet."}</span>
                         </div>
                       )}
                     </section>
@@ -603,7 +627,7 @@ const Dashboard = () => {
                       ) : (
                         <div className="flex min-h-20 items-center gap-3 px-5 py-5 text-sm text-slate-600">
                           <MdPersonAddAlt1 size={19} />
-                          <span>No source values recorded in this period.</span>
+                          <span>{rangeValid ? "No source values recorded in this period." : "Choose a valid date range to view lead sources."}</span>
                         </div>
                       )}
                     </section>
@@ -612,7 +636,7 @@ const Dashboard = () => {
                   <div className="crm-dashboard-grid crm-dashboard-grid-secondary">
                     <section className="crm-dashboard-card" aria-labelledby="dashboard-pipeline-title">
                       <div className="crm-dashboard-card-heading">
-                        <div><h2 id="dashboard-pipeline-title">Current lead pipeline</h2><p>Current status across all {pipelineTotal} workspace leads · stages reconcile to total</p></div>
+                        <div><h2 id="dashboard-pipeline-title">Current lead pipeline</h2><p>Current status across all {pipelineTotal} workspace leads</p></div>
                         <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View leads <MdArrowForward /></button>
                       </div>
                       {pipelineTotal ? (
@@ -641,7 +665,7 @@ const Dashboard = () => {
 
                     <section className="crm-dashboard-card" aria-labelledby="dashboard-tasks-title">
                       <div className="crm-dashboard-card-heading">
-                        <div><h2 id="dashboard-tasks-title">Upcoming tasks</h2><p>Pending follow-ups · {Intl.DateTimeFormat().resolvedOptions().timeZone || "device time"} · priority not tracked</p></div>
+                        <div><h2 id="dashboard-tasks-title">Upcoming tasks</h2><p>Pending follow-ups · times shown in {Intl.DateTimeFormat().resolvedOptions().timeZone || "your local time zone"}</p></div>
                         <button className="crm-text-link" type="button" onClick={() => navigate("/follow-ups")}>View all <MdArrowForward /></button>
                       </div>
                       {taskError ? (
@@ -667,7 +691,7 @@ const Dashboard = () => {
                                     {completingIds.includes(item._id) ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" /> : <MdCheck size={16} />}
                                   </button>
                                   <div className="min-w-0 flex-1">
-                                    <a className="block truncate text-xs font-semibold text-slate-800 hover:text-blue-700" href={item.leadId?._id ? `/lead/${item.leadId._id}` : "/leads"} title={item.leadId?.name || "Open leads"}>{item.leadId?.name || "Lead unavailable"}</a>
+                                    <Link className="block truncate text-xs font-semibold text-slate-800 hover:text-blue-700" to={item.leadId?._id ? `/lead/${item.leadId._id}` : "/leads"} title={item.leadId?.name || "Open leads"}>{item.leadId?.name || "Lead unavailable"}</Link>
                                     <span className="block truncate text-[11px] text-slate-600">{item.type}{item.leadId?.company ? ` · ${item.leadId.company}` : ""}</span>
                                   </div>
                                   <time className="flex shrink-0 flex-col text-right text-[11px] font-medium text-slate-600" dateTime={`${item.scheduledDate}T${item.scheduledTime}`}>
@@ -690,7 +714,7 @@ const Dashboard = () => {
                     <div className="crm-dashboard-card-heading">
                       <div><h2 id="dashboard-recent-title">Recent leads</h2><p>{matchingLeads.length} matching leads · created during {rangeLabel}{search ? " · filtered by search" : ""}</p></div>
                       <div className="flex flex-wrap items-center gap-3">
-                        <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={handleExportCSV} disabled={!matchingLeads.length}>
+                        <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={handleExportCSV} disabled={!rangeValid || !matchingLeads.length}>
                           <MdDownload size={16} /> Export CSV
                         </button>
                         <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View all <MdArrowForward /></button>
@@ -698,7 +722,7 @@ const Dashboard = () => {
                     </div>
                     {leadError ? (
                       <div className="px-5 py-4 text-sm text-slate-600" role="status"><span>Lead list unavailable until the API connection is restored.</span></div>
-                    ) : recentLeads.length ? (
+                    ) : rangeValid && recentLeads.length ? (
                       <div className="w-full overflow-x-auto" role="region" aria-label="Recent leads table" tabIndex="0">
                         <table className="w-full min-w-[790px] table-fixed border-collapse text-left text-xs">
                           <colgroup><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[22%]" /><col className="w-[13%]" /><col className="w-[17%]" /><col className="w-[12%]" /></colgroup>
@@ -706,18 +730,18 @@ const Dashboard = () => {
                           <tbody className="divide-y divide-slate-100 text-slate-700">
                             {recentLeads.map((record) => (
                               <tr key={record._id} className="hover:bg-slate-50">
-                                <td className="max-w-0 px-4 py-3"><a className="block truncate font-semibold text-blue-700 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" href={`/lead/${record._id}`} title={record.name || "Unnamed lead"}>{record.name || "Unnamed lead"}</a></td>
+                                <td className="max-w-0 px-4 py-3">{record._id ? <Link className="block truncate font-semibold text-blue-700 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" to={`/lead/${record._id}`} title={record.name || "Unnamed lead"}>{record.name || "Unnamed lead"}</Link> : <span className="block truncate" title={record.name || "Unnamed lead"}>{record.name || "Unnamed lead"}</span>}</td>
                                 <td className="max-w-0 px-3 py-3"><span className="block truncate" title={record.company || "No company"}>{record.company || "—"}</span></td>
                                 <td className="max-w-0 px-3 py-3">
                                   <span className="block truncate" title={record.email || "No email"}>{record.email || "—"}</span>
-                                  {record.phone && <span className="mt-0.5 block truncate text-[11px] text-slate-600" title={record.phone}>{record.phone}</span>}
+                                  <span className="mt-0.5 block truncate text-[11px] text-slate-600" title={record.phone || "No phone"}>{record.phone || "—"}</span>
                                 </td>
                                 <td className="px-3 py-3"><span className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />{record.status || "New"}</span></td>
-                                <td className="px-3 py-3 text-[11px] text-slate-600"><time dateTime={record.createdAt}>{formatTimestamp(record.createdAt)}</time></td>
+                                <td className="px-3 py-3 text-[11px] text-slate-700"><time dateTime={record.createdAt}>{formatTimestamp(record.createdAt)}</time></td>
                                 <td className="px-3 py-3">
                                   <div className="flex items-center gap-1">
-                                    <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={() => navigate(`/lead/${record._id}`)} aria-label={`Edit ${record.name || "lead"}`} title="Edit lead">Edit</button>
-                                    <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400" onClick={() => handleDeleteLead(record._id)} aria-label={`Delete ${record.name || "lead"}`} title="Delete lead">Delete</button>
+                                      <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => navigate(`/lead/${record._id}`)} aria-label={`Edit ${record.name || "lead"}`} title={record._id ? "Edit lead" : "Lead ID is unavailable"} disabled={!record._id}>Edit</button>
+                                      <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => handleDeleteLead(record._id)} aria-label={`Delete ${record.name || "lead"}`} title={record._id ? "Delete lead" : "Lead ID is unavailable"} disabled={!record._id}>Delete</button>
                                   </div>
                                 </td>
                               </tr>
@@ -727,10 +751,10 @@ const Dashboard = () => {
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center gap-3 px-4 py-8 text-center">
-                        <p className="text-sm font-medium text-slate-700">{search ? "No matching results for this search." : leads.length ? "No leads were created in this date range." : "No leads yet."}</p>
+                        <p className="text-sm font-medium text-slate-700">{!rangeValid ? "Choose a valid date range to view leads." : search ? "No matching results for this search." : leads.length ? "No leads were created in this date range." : "No leads yet."}</p>
                         <div className="flex flex-wrap justify-center gap-2">
                           {(search || rangePreset !== "30days" || (leads.length > 0 && !recentLeads.length)) && <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={clearFilters}><MdRefresh size={16} /> Clear filters</button>}
-                          {!search && !leads.length && (
+                          {rangeValid && !search && !leads.length && (
                             <>
                               <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={() => navigate("/leads/new")}><MdAdd size={17} /> Add your first lead</button>
                               <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={openImport}><MdFileUpload size={17} /> Import leads</button>
@@ -741,26 +765,6 @@ const Dashboard = () => {
                     )}
                   </section>
 
-                  <section className="crm-dashboard-card crm-dashboard-activity-card" aria-labelledby="dashboard-activity-title">
-                    <div className="crm-dashboard-card-heading">
-                      <div><h2 id="dashboard-activity-title">Recently added leads</h2><p>Lead records sorted by creation time · no separate status-change audit history is stored.</p></div>
-                      <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View leads <MdArrowForward /></button>
-                    </div>
-                    {recentCreated.length ? (
-                      <ul className="crm-dashboard-activity-list">
-                        {recentCreated.map((record) => (
-                          <li key={record._id}>
-                            <span className="crm-activity-avatar">{record.name?.slice(0, 1).toUpperCase() || "L"}</span>
-                            <div className="min-w-0 flex-1">
-                              <a className="block truncate text-xs font-semibold text-slate-800 hover:text-blue-700" href={`/lead/${record._id}`} title={record.name || "New lead"}>{record.name || "New lead"}</a>
-                              <p className="mt-1 truncate text-[11px] text-slate-600">{record.company || "No company"} · {record.status || "New"}</p>
-                            </div>
-                            <time className="shrink-0 text-right text-[10px] text-slate-600" dateTime={record.createdAt}>{formatTimestamp(record.createdAt)}</time>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : <div className="px-5 py-4 text-sm text-slate-600"><span>No activity in this workspace yet.</span></div>}
-                  </section>
                 </>
               )}
             </>

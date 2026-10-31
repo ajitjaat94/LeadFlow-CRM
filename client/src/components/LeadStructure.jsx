@@ -22,8 +22,9 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
     <div className="lead-form-layout">
       <div className="lead-form-grid">
         <div className="lead-form-field">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Name</label>
+          <label htmlFor="lead-name" className="mb-2 block text-sm font-semibold text-slate-700">Name</label>
           <Input
+            id="lead-name"
             type="text"
             name="name"
             value={formData.name}
@@ -35,8 +36,9 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
         </div>
 
         <div className="lead-form-field">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Company</label>
+          <label htmlFor="lead-company" className="mb-2 block text-sm font-semibold text-slate-700">Company</label>
           <Input
+            id="lead-company"
             type="text"
             name="company"
             value={formData.company}
@@ -50,8 +52,9 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
 
       <div className="lead-form-grid">
         <div className="lead-form-field">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+          <label htmlFor="lead-email" className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
           <input
+            id="lead-email"
             type="email"
             name="email"
             value={formData.email}
@@ -63,8 +66,9 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
         </div>
 
         <div className="lead-form-field">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
+          <label htmlFor="lead-phone" className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
           <Input
+            id="lead-phone"
             type="text"
             name="phone"
             value={formData.phone}
@@ -77,8 +81,9 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
 
       <div className="lead-form-grid">
         <div className="lead-form-field">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Status</label>
+          <label htmlFor="lead-status" className="mb-2 block text-sm font-semibold text-slate-700">Status</label>
           <select
+            id="lead-status"
             name="status"
             value={formData.status}
             onChange={handleChange}
@@ -95,8 +100,9 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
         </div>
 
         <div className="lead-form-field">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">Notes</label>
+          <label htmlFor="lead-notes" className="mb-2 block text-sm font-semibold text-slate-700">Notes</label>
           <textarea
+            id="lead-notes"
             name="notes"
             value={formData.notes}
             onChange={handleChange}

@@ -25,10 +25,15 @@ const leadSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['New', 'Contacted', 'Qualified', 'Lost'],
+        enum: ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'],
         default: 'New'
     },
-    notes: String
+    notes: String,
+    customFields: {
+        type: Map,
+        of: mongoose.Schema.Types.Mixed,
+        default: {}
+    }
 },
     {
         timestamps: true

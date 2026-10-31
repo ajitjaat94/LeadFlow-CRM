@@ -6,10 +6,11 @@ import { updateLeadApi } from "../../controllers/curd-leads/updateLeadController
 import { deleteLeadsApi } from "../../controllers/curd-leads/deleteLeadsController.js";
 import { getLeadStatusApi } from "../../controllers/curd-leads/leadStatusController.js";
 import { verifyMeddleware } from "../../middlewares/verify-User.middlewares.js";
+import { workspaceContext } from "../../middlewares/workspace.middleware.js";
 
 const router = express.Router();
 
-router.use(verifyMeddleware);
+router.use(verifyMeddleware, workspaceContext);
 router.post('/', leadApi);
 router.get('/status', getLeadStatusApi);
 router.get('/', getLeadsApi);

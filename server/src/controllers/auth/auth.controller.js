@@ -4,12 +4,15 @@ import { user } from "../../models/user.models.js";
 import { asyncHelper } from "../../utils/utils.asyncHandler.js";
 import { sendResponce } from "../../utils/utils.responce.js";
 
+const escapedEmail = (email) => String(email || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // Signup Controller
 export const signup = asyncHelper(async (req, res) => {
-    const { username, email, password } = req.body;
+    const { username, password } = req.body;
+    const email = String(req.body.email || "").trim().toLowerCase();
 
     // Check if user already exists
-    const existingUser = await user.findOne({ email });
+    const existingUser = await user.findOne({ email: { $regex: `^${escapedEmail(email)}$`, $options: "i" } });
     if (existingUser) {
         return sendResponce(res, 400, false, "User already exists", null, "Email already registered");
     }
@@ -54,10 +57,13 @@ export const signup = asyncHelper(async (req, res) => {
 
 // Login Controller
 export const login = asyncHelper(async (req, res) => {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const email = String(req.body.email || "").trim();
 
     // Find user by email
-    const foundUser = await user.findOne({ email }).select("+password");
+    const foundUser = await user.findOne({
+        email: { $regex: `^${escapedEmail(email)}$`, $options: "i" },
+    }).select("+password");
     if (!foundUser) {
         return sendResponce(res, 401, false, "Invalid credentials", null, "User not found");
     }

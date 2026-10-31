@@ -2,11 +2,7 @@ import { lead } from "../../models/lead.js";
 //---------------------------------------------------------
 async function getLeadsController(req, res) {
     try {
-        const leads = await lead.find({ user: req.user?.userId });
-        if (!leads.length) {
-            return res.status(404).json({ message: 'No leads found' })
-        }
-
+        const leads = await lead.find({ user: { $in: req.workspaceMemberIds } });
         return res.status(200).json({
             message: 'Leads retrieved successfully',
             data: leads

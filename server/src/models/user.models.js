@@ -8,7 +8,9 @@ const userSchima = new mongoose.Schema({
     email: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        lowercase: true,
+        trim: true,
     },
     password: {
         type: String,
@@ -23,6 +25,12 @@ const userSchima = new mongoose.Schema({
         enum: ["user", "admin"],
         default: "user"
     },
+    workspaceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "workspace",
+        default: null,
+        index: true,
+    },
     verifyToken: {
         type: String
     },
@@ -35,4 +43,3 @@ const userSchima = new mongoose.Schema({
 );
 
 export const user = mongoose.model("user", userSchima);
-

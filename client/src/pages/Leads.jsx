@@ -6,10 +6,10 @@ import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import LeadTable from "../components/LeadTable";
 import FollowUpModal from "../components/follow-ups/FollowUpModal";
+import { LEAD_STATUSES } from "../data/leadStatuses";
 import { createLead, createLeadField, deleteLead, getLeadFields, getLeads, updateLead } from "../services/api";
 
 const exportHeaders = ["Name", "Company", "Email", "Phone", "Status", "Notes"];
-const validStatuses = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
 const headerAliases = {
   name: ["name", "full name", "lead name", "contact name", "customer name", "first name", "client", "client name", "company / client", "business / client"],
   company: ["company", "company name", "organization", "organisation", "business", "business name"],
@@ -127,6 +127,12 @@ const Leads = () => {
       })
       .finally(() => setLoading(false));
   }, [location.state?.savedLead]);
+
+  useEffect(() => {
+    if (!location.state?.openImport) return;
+    fileInputRef.current?.click();
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state?.openImport, navigate]);
   const filteredLeads = leads.filter((lead) =>
     [lead.name, lead.company, lead.email, lead.phone, lead.status]
       .some((value) => value?.toLowerCase().includes(searchTerm.toLowerCase())),
@@ -222,7 +228,7 @@ const Leads = () => {
       const fallbackName = Object.values(row).find((value) => value) || `Imported lead ${rowIndex}`;
       const company = row.company || "Imported Leads";
       const email = row.email || `imported-${Date.now()}-${rowIndex}@leadflow.local`;
-      const status = validStatuses.includes(row.status) ? row.status : "New";
+      const status = LEAD_STATUSES.includes(row.status) ? row.status : "New";
       importedLeads.push(await createLead({ name: row.name || fallbackName, company, email, phone: row.phone, status, notes: row.notes, customFields: customFieldValues }));
     }
 

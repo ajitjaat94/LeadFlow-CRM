@@ -13,6 +13,7 @@ import {
 import { Link } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
+import { LEAD_STATUSES } from "../data/leadStatuses";
 import { getDeals, getFollowUps, getLeads } from "../services/api";
 
 const periods = [
@@ -22,7 +23,6 @@ const periods = [
   { value: "all", label: "All time" },
 ];
 
-const leadStages = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
 const dealStages = ["Prospecting", "Qualification", "Proposal", "Negotiation", "Won", "Lost"];
 const stageColors = {
   New: "bg-sky-500",
@@ -190,7 +190,7 @@ const Reports = () => {
   const weightedPipeline = groupedMoney(openDeals, (item) => (Number(item.value) || 0) * (Number(item.probability) || 0) / 100);
   const wonRevenue = groupedMoney(wonDeals, (item) => Number(item.value) || 0);
 
-  const leadStageRows = leadStages.map((stage) => ({
+  const leadStageRows = LEAD_STATUSES.map((stage) => ({
     name: stage,
     count: periodLeads.filter((item) => item.status === stage).length,
   }));

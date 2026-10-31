@@ -1,55 +1,85 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  MdArrowDownward,
+  MdAdd,
   MdArrowForward,
-  MdArrowUpward,
   MdBolt,
+  MdCheck,
   MdCheckCircle,
+  MdDownload,
+  MdFileUpload,
   MdGroups,
-  MdKeyboardArrowDown,
   MdPersonAddAlt1,
-  MdQueryBuilder,
-  MdTrendingUp,
+  MdRefresh,
+  MdTrendingDown,
 } from "react-icons/md";
+import { useLocation, useNavigate } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
-import LeadTable from "../components/LeadTable";
-import { useLocation, useNavigate } from "react-router-dom";
-import {
-  deleteLead,
-  getFollowUps,
-  getLeadFields,
-  getLeadStatus,
-  getLeads,
-  updateLead,
-} from "../services/api";
+import { LEAD_STATUSES } from "../data/leadStatuses";
+import { completeFollowUp, deleteLead, getDashboardFollowUps, getLeads } from "../services/api";
 
-const stages = ["New", "Contacted", "Qualified", "Won"];
-const sourceColors = ["blue", "green", "pink", "violet", "slate"];
-const chartPeriods = [
-  { value: "7days", label: "Last 7 days", days: 7, buckets: 7 },
-  { value: "30days", label: "Last 30 days", days: 30, buckets: 6 },
-  { value: "90days", label: "Last 90 days", days: 90, buckets: 6 },
-  { value: "7months", label: "Last 7 months", months: 7, buckets: 7 },
-  { value: "12months", label: "Last 12 months", months: 12, buckets: 12 },
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CHART_BOUNDS = { left: 44, right: 690, top: 20, bottom: 164 };
+const RANGE_PRESETS = [
+  { value: "7days", label: "Last 7 days", days: 7 },
+  { value: "30days", label: "Last 30 days", days: 30 },
+  { value: "90days", label: "Last 90 days", days: 90 },
 ];
 
-const getLeadSource = (lead) => {
-  const customFields = lead.customFields || {};
-  const sourceField = Object.entries(customFields).find(([key]) => key.toLowerCase() === "source");
-  return lead.source || sourceField?.[1] || "Other";
+const toDateKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
-const chartBounds = { left: 26, right: 674, top: 30, bottom: 165 };
+const parseDateKey = (key) => {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
+};
+
+const dateOrdinal = (key) => {
+  const [year, month, day] = key.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / DAY_MS);
+};
+
+const getRangeForPreset = (days, today = new Date()) => {
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const start = new Date(end);
+  start.setDate(start.getDate() - days + 1);
+  return { start: toDateKey(start), end: toDateKey(end) };
+};
+
+const getLeadSource = (record) => {
+  const customFields = record.customFields instanceof Map
+    ? Object.fromEntries(record.customFields)
+    : record.customFields || {};
+  const sourceValue = Object.entries(customFields).find(([key]) => key.toLowerCase() === "source")?.[1];
+  const source = record.source || sourceValue;
+  return typeof source === "string" && source.trim() ? source.trim() : "Not recorded";
+};
+
+const formatDate = (dateKey, options = { day: "numeric", month: "short" }) => {
+  if (!dateKey) return "—";
+  const date = parseDateKey(dateKey);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString(undefined, options);
+};
+
+const formatTimestamp = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Date unavailable"
+    : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
 
 const getChartX = (index, count) => (
   count > 1
-    ? chartBounds.left + (index * (chartBounds.right - chartBounds.left)) / (count - 1)
-    : (chartBounds.left + chartBounds.right) / 2
+    ? CHART_BOUNDS.left + (index * (CHART_BOUNDS.right - CHART_BOUNDS.left)) / (count - 1)
+    : (CHART_BOUNDS.left + CHART_BOUNDS.right) / 2
 );
 
 const getChartY = (value, maxValue) => (
-  chartBounds.bottom - (value / maxValue) * (chartBounds.bottom - chartBounds.top)
+  CHART_BOUNDS.bottom - (value / maxValue) * (CHART_BOUNDS.bottom - CHART_BOUNDS.top)
 );
 
 const getTrendPath = (values, maxValue) => values.map((value, index) => {
@@ -58,21 +88,38 @@ const getTrendPath = (values, maxValue) => values.map((value, index) => {
   return `${index === 0 ? "M" : "L"} ${x} ${y}`;
 }).join(" ");
 
+const escapeCsvValue = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+
+const toUserFacingLoadError = (error, resourceName) => {
+  if (error.message?.includes("invalid response")) {
+    return `${resourceName} returned an invalid response. The dashboard cannot show this data.`;
+  }
+  if (!error.response) return `${resourceName} could not be reached. Check the API/database connection and retry.`;
+  if (error.response.status >= 500 || error.response.status === 503) {
+    return `${resourceName} is unavailable. The API or database may be offline. Retry when the service is available.`;
+  }
+  return error.response.data?.message || `Unable to load ${resourceName.toLowerCase()}.`;
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const authRequired = location.state?.authRequired;
   const [leads, setLeads] = useState([]);
-  const [status, setStatus] = useState({});
-  const [error, setError] = useState("");
-  const [customFields, setCustomFields] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [upcomingFollowUps, setUpcomingFollowUps] = useState([]);
+  const [followUps, setFollowUps] = useState([]);
+  const [loading, setLoading] = useState(Boolean(localStorage.getItem("accessToken")));
+  const [refreshing, setRefreshing] = useState(false);
+  const [leadError, setLeadError] = useState("");
+  const [taskError, setTaskError] = useState("");
+  const [notice, setNotice] = useState("");
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem("accessToken"));
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
-  const [chartPeriod, setChartPeriod] = useState("7months");
+  const [rangePreset, setRangePreset] = useState("30days");
+  const [customRange, setCustomRange] = useState(() => getRangeForPreset(30));
+  const [searchTerm, setSearchTerm] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
+  const [completingIds, setCompletingIds] = useState([]);
   const [greetingExpiresAt, setGreetingExpiresAt] = useState(
-    () => Number(location.state?.greetingExpiresAt) || 0
+    () => Number(location.state?.greetingExpiresAt) || 0,
   );
   const [greetingTime, setGreetingTime] = useState(() => {
     const expiresAt = Number(location.state?.greetingExpiresAt);
@@ -80,171 +127,221 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    if (!accessToken) return undefined;
+    if (!accessToken) {
+      return undefined;
+    }
 
     let active = true;
-    Promise.all([getLeads(), getLeadStatus(), getLeadFields(), getFollowUps()])
-      .then(([leadData, statusData, fieldData, followUps]) => {
-        if (!active) return;
-        setLeads(leadData || []);
-        setStatus(statusData || {});
-        setCustomFields(fieldData || []);
-        setUpcomingFollowUps(
-          (followUps || [])
-            .filter((item) => item.status === "Pending")
-            .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate))
-        );
-        setError("");
-      })
-      .catch((requestError) => {
-        if (active && requestError.response?.status !== 401) {
-          setError("Unable to load dashboard data. Please check your API connection.");
-        }
-      });
+    const loadDashboard = async () => {
+      const [leadResult, followUpResult] = await Promise.allSettled([getLeads(), getDashboardFollowUps()]);
+      if (!active) return;
 
+      if (leadResult.status === "fulfilled" && Array.isArray(leadResult.value)) {
+        setLeads(leadResult.value);
+      } else {
+        const error = leadResult.status === "rejected"
+          ? leadResult.reason
+          : new Error("The leads API returned an invalid response.");
+        setLeadError(toUserFacingLoadError(error, "Lead data"));
+      }
+
+      if (followUpResult.status === "fulfilled" && Array.isArray(followUpResult.value)) {
+        setFollowUps(followUpResult.value);
+      } else {
+        const error = followUpResult.status === "rejected"
+          ? followUpResult.reason
+          : new Error("The follow-ups API returned an invalid response.");
+        setTaskError(toUserFacingLoadError(error, "Follow-up data"));
+      }
+
+      setLoading(false);
+      setRefreshing(false);
+    };
+    void loadDashboard();
     return () => { active = false; };
-  }, [accessToken]);
+  }, [accessToken, retryCount]);
 
   useEffect(() => {
     if (!greetingExpiresAt) return undefined;
-
-    const timeoutId = window.setTimeout(
-      () => {
-        setGreetingExpiresAt(0);
-        navigate(location.pathname, { replace: true, state: {} });
-      },
-      Math.max(0, greetingExpiresAt - Date.now())
-    );
+    const timeoutId = window.setTimeout(() => {
+      setGreetingExpiresAt(0);
+      navigate(location.pathname, { replace: true, state: {} });
+    }, Math.max(0, greetingExpiresAt - Date.now()));
     return () => window.clearTimeout(timeoutId);
   }, [greetingExpiresAt, location.pathname, navigate]);
 
+  const handleRetry = () => {
+    if (leads.length) setRefreshing(true);
+    else setLoading(true);
+    setRetryCount((count) => count + 1);
+  };
+
   const handleDeleteLead = async (id) => {
+    const record = leads.find((item) => item._id === id);
+    if (!record || !window.confirm(`Delete lead "${record.name}"? This cannot be undone.`)) return;
+    setNotice("");
     try {
       await deleteLead(id);
-      setLeads((currentLeads) => currentLeads.filter((lead) => lead._id !== id));
-    } catch {
-      setError("Unable to delete this lead.");
+      setLeads((current) => current.filter((item) => item._id !== id));
+      setNotice("Lead deleted.");
+    } catch (error) {
+      setLeadError(error.response?.data?.message || "Unable to delete this lead.");
     }
   };
 
-  const handleStatusChange = async (id, nextStatus) => {
-    const previousLead = leads.find((lead) => lead._id === id);
-    setLeads((currentLeads) => currentLeads.map((lead) => (
-      lead._id === id ? { ...lead, status: nextStatus } : lead
-    )));
+  const handleCompleteFollowUp = async (item) => {
+    if (completingIds.includes(item._id)) return;
+    setCompletingIds((current) => [...current, item._id]);
+    setTaskError("");
+    setNotice("");
     try {
-      await updateLead(id, { status: nextStatus });
-    } catch {
-      setLeads((currentLeads) => currentLeads.map((lead) => (
-        lead._id === id ? { ...lead, status: previousLead.status } : lead
+      await completeFollowUp(item._id);
+      setFollowUps((current) => current.map((followUp) => (
+        followUp._id === item._id ? { ...followUp, status: "Completed", completedAt: new Date().toISOString() } : followUp
       )));
-      setError("Unable to save the status change.");
+      setNotice(`Completed ${item.type.toLowerCase()} follow-up${item.leadId?.name ? ` for ${item.leadId.name}` : ""}.`);
+    } catch (error) {
+      setTaskError(error.response?.data?.message || "Unable to complete this follow-up. Please retry.");
+    } finally {
+      setCompletingIds((current) => current.filter((id) => id !== item._id));
     }
   };
 
-  const filteredLeads = leads.filter((lead) => {
-    const search = searchTerm.toLowerCase();
-    return [lead.name, lead.company, lead.email, lead.status, lead.phone]
-      .some((value) => value?.toLowerCase().includes(search));
-  });
+  const currentRange = useMemo(() => {
+    if (rangePreset === "custom") return customRange;
+    const preset = RANGE_PRESETS.find((item) => item.value === rangePreset) || RANGE_PRESETS[1];
+    return getRangeForPreset(preset.days);
+  }, [customRange, rangePreset]);
+  const rangeValid = Boolean(
+    currentRange.start
+    && currentRange.end
+    && currentRange.start <= currentRange.end,
+  );
+  const rangeLabel = rangePreset === "custom"
+    ? `${formatDate(currentRange.start, { day: "numeric", month: "short", year: "numeric" })} – ${formatDate(currentRange.end, { day: "numeric", month: "short", year: "numeric" })}`
+    : RANGE_PRESETS.find((item) => item.value === rangePreset)?.label || "Last 30 days";
+
+  const inRangeLeads = useMemo(() => {
+    if (!rangeValid) return [];
+    return leads.filter((record) => {
+      if (!record.createdAt) return false;
+      const createdDate = toDateKey(new Date(record.createdAt));
+      return createdDate >= currentRange.start && createdDate <= currentRange.end;
+    });
+  }, [currentRange.end, currentRange.start, leads, rangeValid]);
 
   const leadMetrics = useMemo(() => {
-    const countStatus = (name) => leads.filter((lead) => lead.status === name).length;
-    const converted = countStatus("Won");
-    const lost = countStatus("Lost");
+    const counts = Object.fromEntries(LEAD_STATUSES.map((status) => [
+      status,
+      inRangeLeads.filter((record) => record.status === status).length,
+    ]));
     return {
-      total: status.totalLeads ?? leads.length,
-      converted,
-      inProgress: leads.filter((lead) => !["Won", "Lost"].includes(lead.status)).length,
-      lost,
-      conversionRate: leads.length ? Math.round((converted / leads.length) * 100) : 0,
+      total: inRangeLeads.length,
+      won: counts.Won,
+      active: inRangeLeads.length - counts.Won - counts.Lost,
+      lost: counts.Lost,
+      counts,
     };
-  }, [leads, status.totalLeads]);
+  }, [inRangeLeads]);
+
+  const pipelineCounts = useMemo(() => LEAD_STATUSES.map((name) => ({
+    name,
+    count: leads.filter((record) => record.status === name).length,
+  })), [leads]);
+  const pipelineKnownTotal = pipelineCounts.reduce((sum, stage) => sum + stage.count, 0);
+  const pipelineUnclassified = Math.max(0, leads.length - pipelineKnownTotal);
+  const pipelineTotal = leads.length;
+
+  const chartData = useMemo(() => {
+    if (!rangeValid) return { labels: [], values: [], boundaries: [], max: 1, ticks: [], hasActivity: false };
+    const totalDays = dateOrdinal(currentRange.end) - dateOrdinal(currentRange.start) + 1;
+    const bucketCount = Math.min(7, totalDays);
+    const values = Array(bucketCount).fill(0);
+    const boundaries = Array.from({ length: bucketCount }, (_, index) => {
+      const startOffset = Math.floor((index * totalDays) / bucketCount);
+      const endOffset = Math.floor(((index + 1) * totalDays) / bucketCount) - 1;
+      const startDate = new Date(`${currentRange.start}T12:00:00`);
+      startDate.setDate(startDate.getDate() + startOffset);
+      const endDate = new Date(`${currentRange.start}T12:00:00`);
+      endDate.setDate(endDate.getDate() + endOffset);
+      return { start: toDateKey(startDate), end: toDateKey(endDate) };
+    });
+
+    inRangeLeads.forEach((record) => {
+      if (!record.createdAt) return;
+      const createdDate = toDateKey(new Date(record.createdAt));
+      const offset = dateOrdinal(createdDate) - dateOrdinal(currentRange.start);
+      const index = Math.min(bucketCount - 1, Math.floor((offset * bucketCount) / totalDays));
+      if (index >= 0) values[index] += 1;
+    });
+
+    const largestValue = Math.max(0, ...values);
+    const step = Math.max(1, Math.ceil(largestValue / 4));
+    const max = step * 4;
+    const ticks = Array.from({ length: 5 }, (_, index) => {
+      const value = max - index * step;
+      return {
+        value,
+        y: CHART_BOUNDS.top + (index * (CHART_BOUNDS.bottom - CHART_BOUNDS.top)) / 4,
+      };
+    });
+    const formatter = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+    return {
+      labels: boundaries.map(({ start, end }) => {
+        const startLabel = formatter.format(parseDateKey(start));
+        return start === end ? startLabel : `${startLabel}–${formatter.format(parseDateKey(end))}`;
+      }),
+      boundaries,
+      values,
+      max,
+      ticks,
+      hasActivity: values.some((value) => value > 0),
+    };
+  }, [currentRange.end, currentRange.start, inRangeLeads, rangeValid]);
 
   const sourceStats = useMemo(() => {
-    const counts = leads.reduce((result, lead) => {
-      const source = String(getLeadSource(lead) || "Other");
+    const counts = inRangeLeads.reduce((result, record) => {
+      const source = getLeadSource(record);
       result[source] = (result[source] || 0) + 1;
       return result;
     }, {});
     return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .slice(0, 5)
       .map(([name, count]) => ({
         name,
         count,
-        percentage: leads.length ? Math.round((count / leads.length) * 100) : 0,
+        percentage: inRangeLeads.length ? Math.round((count / inRangeLeads.length) * 100) : 0,
       }));
-  }, [leads]);
+  }, [inRangeLeads]);
 
-  const pipelineCounts = stages.map((stage) => ({
-    stage,
-    count: leads.filter((lead) => lead.status === stage).length,
-  }));
-  const allStatuses = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
-  const statusCounts = allStatuses.map((name) => ({
-    name,
-    count: leads.filter((lead) => lead.status === name).length,
-  }));
-  const maxStatusCount = Math.max(1, ...statusCounts.map((item) => item.count));
-
-  const chartData = useMemo(() => {
-    const now = new Date();
-    const period = chartPeriods.find((item) => item.value === chartPeriod) || chartPeriods[3];
-    let buckets;
-
-    if (period.months) {
-      buckets = Array.from({ length: period.buckets }, (_, index) => {
-        const monthOffset = period.months - period.buckets + index;
-        const start = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
-        const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
-        return { start, end };
-      }).reverse();
-    } else {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-      start.setDate(start.getDate() - period.days + 1);
-      const bucketDuration = (period.days * 24 * 60 * 60 * 1000) / period.buckets;
-      buckets = Array.from({ length: period.buckets }, (_, index) => ({
-        start: new Date(start.getTime() + index * bucketDuration),
-        end: new Date(start.getTime() + (index + 1) * bucketDuration),
-      }));
-    }
-
-    const leadsPerBucket = buckets.map(({ start, end }) => leads.filter((lead) => {
-      const createdAt = new Date(lead.createdAt);
-      return createdAt >= start && createdAt < end;
-    }));
-    const monthlyLeads = leadsPerBucket.map((bucket) => bucket.length);
-    const monthlyWon = leadsPerBucket.map((bucket) => bucket.filter((lead) => lead.status === "Won").length);
-    const largestValue = Math.max(0, ...monthlyLeads, ...monthlyWon);
-    const axisMax = largestValue <= 4 ? Math.max(1, largestValue) : Math.ceil(largestValue / 4) * 4;
-    const tickCount = Math.min(axisMax, 4);
-    const ticks = Array.from({ length: tickCount + 1 }, (_, index) => {
-      const value = axisMax - (index * axisMax) / tickCount;
-      const y = chartBounds.top + (index * (chartBounds.bottom - chartBounds.top)) / tickCount;
-      return { value, y };
-    });
-    return {
-      label: period.label,
-      labels: buckets.map(({ start }) => start.toLocaleDateString("en-IN", { day: "numeric", month: "short" })),
-      leads: monthlyLeads,
-      won: monthlyWon,
-      max: axisMax,
-      ticks,
-      hasActivity: monthlyLeads.some(Boolean) || monthlyWon.some(Boolean),
-    };
-  }, [chartPeriod, leads]);
-
-  const recentLeads = [...leads].sort(
-    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
-  );
+  const search = searchTerm.trim().toLocaleLowerCase();
+  const matchingLeads = useMemo(() => inRangeLeads.filter((record) => (
+    !search || [record.name, record.company, record.email, record.phone, record.status]
+      .some((value) => String(value || "").toLocaleLowerCase().includes(search))
+  )), [inRangeLeads, search]);
+  const recentLeads = useMemo(() => [...matchingLeads].sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+  ).slice(0, 5), [matchingLeads]);
+  const todayKey = toDateKey(new Date());
+  const now = new Date();
+  const nowTaskTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const pendingFollowUps = useMemo(() => followUps
+    .filter((item) => item.status === "Pending")
+    .sort((a, b) => `${a.scheduledDate}T${a.scheduledTime}`.localeCompare(`${b.scheduledDate}T${b.scheduledTime}`)), [followUps]);
+  const groupedTasks = useMemo(() => ({
+    Overdue: pendingFollowUps.filter((item) => item.scheduledDate < todayKey || (item.scheduledDate === todayKey && item.scheduledTime < nowTaskTime)),
+    Today: pendingFollowUps.filter((item) => item.scheduledDate === todayKey && item.scheduledTime >= nowTaskTime),
+    Upcoming: pendingFollowUps.filter((item) => item.scheduledDate > todayKey),
+  }), [nowTaskTime, pendingFollowUps, todayKey]);
+  const recentCreated = useMemo(() => [...leads]
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 5), [leads]);
   const userName = (() => {
     try {
-      const user = JSON.parse(localStorage.getItem("user") || "null");
-      return user?.username?.split(" ")[0] || "there";
+      return JSON.parse(localStorage.getItem("user") || "null")?.username?.split(" ")[0] || "";
     } catch {
-      return "there";
+      return "";
     }
   })();
   const greeting = greetingTime.getHours() < 12
@@ -254,307 +351,420 @@ const Dashboard = () => {
       : "Good evening";
 
   const handleExportCSV = () => {
-    if (!leads.length) {
-      alert("No leads available to export.");
+    if (!matchingLeads.length) {
+      setNotice("There are no matching leads to export.");
       return;
     }
-    const headers = ["Name", "Company", "Email", "Phone", "Status", "Notes"];
-    const rows = leads.map((lead) => [lead.name, lead.company, lead.email, lead.phone, lead.status, lead.notes]);
-    const csvLines = [
-      headers.join(","),
-      ...rows.map((row) => row.map((value) => `"${String(value || "").replace(/"/g, '""')}"`).join(",")),
-    ];
-    const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "leads.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    const headers = ["Name", "Company", "Email", "Phone", "Status", "Created", "Notes"];
+    const rows = matchingLeads.map((record) => [
+      record.name,
+      record.company,
+      record.email,
+      record.phone,
+      record.status,
+      record.createdAt,
+      record.notes,
+    ]);
+    let url = "";
+    try {
+      const csv = [headers, ...rows].map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
+      url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `leads-${currentRange.start}-to-${currentRange.end}.csv`;
+      link.click();
+      setNotice(`Exported ${matchingLeads.length} lead${matchingLeads.length === 1 ? "" : "s"} for ${rangeLabel}${search ? " matching your search" : ""}.`);
+    } catch (error) {
+      console.error("Unable to export dashboard leads", error);
+      setLeadError("Unable to export leads. Please retry.");
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+    }
+  };
+
+  const openImport = () => navigate("/leads", { state: { openImport: true } });
+  const clearFilters = () => {
+    setSearchTerm("");
+    setRangePreset("30days");
+    setCustomRange(getRangeForPreset(30));
   };
 
   return (
     <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
-      <DashboardSidebar isOpen={sidebarOpen} onClose={() => {
-        if (window.innerWidth <= 760) setSidebarOpen(false);
-      }} onToggle={() => setSidebarOpen((open) => !open)} />
+      <DashboardSidebar
+        isOpen={sidebarOpen}
+        onClose={() => {
+          if (window.innerWidth <= 760) setSidebarOpen(false);
+        }}
+        onToggle={() => setSidebarOpen((open) => !open)}
+      />
       <main className="crm-main">
         <DashboardTopbar
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
-          onAddLead={() => navigate("/leads/new")}
-          authRequired={authRequired}
+          searchPlaceholder="Search leads in this period…"
+          onNotificationsClick={() => navigate("/follow-ups")}
+          authRequired={location.state?.authRequired}
           onAuthenticated={(authData) => {
             setAccessToken(authData.accessToken);
             if (authData.accessToken && authData.greetingExpiresAt) {
+              setLoading(true);
+              setLeadError("");
+              setTaskError("");
+              setNotice("");
               setGreetingTime(new Date(authData.greetingExpiresAt - 2 * 60 * 1000));
               setGreetingExpiresAt(authData.greetingExpiresAt);
             } else {
               setGreetingExpiresAt(0);
               setLeads([]);
-              setStatus({});
-              setCustomFields([]);
-              setUpcomingFollowUps([]);
+              setFollowUps([]);
+              setLoading(false);
+              setLeadError("");
+              setTaskError("");
             }
           }}
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
           sidebarOpen={sidebarOpen}
         />
         <div className="crm-page crm-dashboard-page">
-          {error && <div className="crm-dashboard-error" role="alert">{error}</div>}
-
-          <section className="crm-dashboard-overview">
-            <div className="crm-dashboard-heading">
-              <div>
-                <p className="crm-dashboard-eyebrow">Workspace overview</p>
-                {greetingExpiresAt > 0 && (
-                  <h1>{greeting}, {userName}! <span aria-hidden="true">👋</span></h1>
-                )}
-                <p>Here&apos;s what&apos;s happening with your CRM today.</p>
-              </div>
-              <div className="crm-today-pill">
-                <span>Today</span>
-                <span>{new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
-              </div>
+          <header className="mb-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div>
+              <span className="crm-dashboard-eyebrow">Workspace overview</span>
+              <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Dashboard</h1>
+              <p className="mt-1 text-sm text-slate-600">{greetingExpiresAt > 0 && userName ? `${greeting}, ${userName}. ` : ""}Your CRM at a glance.</p>
             </div>
-
-            <div className="crm-metrics-grid">
-              <article className="crm-dashboard-metric crm-metric-blue">
-                <span className="crm-dashboard-metric-icon"><MdGroups size={22} /></span>
-                <p>Total leads</p>
-                <strong>{leadMetrics.total}</strong>
-                <span className="crm-dashboard-metric-detail"><MdTrendingUp /> Your pipeline</span>
-                <span className="crm-metric-sparkline crm-sparkline-blue" aria-hidden="true" />
-              </article>
-              <article className="crm-dashboard-metric crm-metric-violet">
-                <span className="crm-dashboard-metric-icon"><MdCheckCircle size={22} /></span>
-                <p>Converted</p>
-                <strong>{leadMetrics.converted}</strong>
-                <span className="crm-dashboard-metric-detail"><MdArrowUpward /> {leadMetrics.conversionRate}% conversion</span>
-                <span className="crm-metric-sparkline crm-sparkline-violet" aria-hidden="true" />
-              </article>
-              <article className="crm-dashboard-metric crm-metric-sky">
-                <span className="crm-dashboard-metric-icon"><MdBolt size={22} /></span>
-                <p>In progress</p>
-                <strong>{leadMetrics.inProgress}</strong>
-                <span className="crm-dashboard-metric-detail"><MdQueryBuilder /> Active opportunities</span>
-                <span className="crm-metric-sparkline crm-sparkline-sky" aria-hidden="true" />
-              </article>
-              <article className="crm-dashboard-metric crm-metric-rose">
-                <span className="crm-dashboard-metric-icon"><MdArrowDownward size={22} /></span>
-                <p>Lost</p>
-                <strong>{leadMetrics.lost}</strong>
-                <span className="crm-dashboard-metric-detail crm-metric-negative">Closed lost</span>
-                <span className="crm-metric-sparkline crm-sparkline-rose" aria-hidden="true" />
-              </article>
+            <div className="flex flex-wrap gap-2">
+              {accessToken && (
+                <>
+                  <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={openImport}>
+                    <MdFileUpload size={17} /> Import leads
+                  </button>
+                  <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={() => navigate("/leads/new")}>
+                    <MdAdd size={18} /> Add lead
+                  </button>
+                </>
+              )}
             </div>
-          </section>
+          </header>
 
-          <div className="crm-dashboard-grid crm-dashboard-grid-primary">
-            <section className="crm-dashboard-card crm-lead-overview-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Leads overview</h2><p>Lead creation and conversions · {chartData.label.toLowerCase()}</p></div>
-                <label className="relative inline-flex shrink-0 items-center">
-                  <span className="sr-only">Chart time period</span>
-                  <select
-                    className="crm-period-label cursor-pointer appearance-none pr-7 outline-none transition focus-visible:ring-2 focus-visible:ring-blue-200"
-                    value={chartPeriod}
-                    onChange={(event) => setChartPeriod(event.target.value)}
-                  >
-                    {chartPeriods.map((period) => (
-                      <option key={period.value} value={period.value}>{period.label}</option>
-                    ))}
-                  </select>
-                  <MdKeyboardArrowDown className="pointer-events-none absolute right-2 text-slate-500" size={16} aria-hidden="true" />
-                </label>
-              </div>
-              <div className="crm-chart-legend">
-                <span><i className="crm-legend-blue" />New leads</span>
-                <span><i className="crm-legend-violet" />Converted</span>
-              </div>
-              <div className="crm-line-chart relative">
-                <div className="crm-chart-y-labels">
-                  {chartData.ticks.map((tick) => (
-                    <span key={`${tick.value}-${tick.y}`}>{tick.value}</span>
-                  ))}
-                </div>
-                <svg viewBox="0 0 680 200" role="img" aria-label={`New leads and conversions for ${chartData.label.toLowerCase()}`}>
-                  {chartData.ticks.map((tick) => (
-                    <line key={tick.y} x1="24" y1={tick.y} x2="670" y2={tick.y} className="crm-chart-gridline" />
-                  ))}
-                  {chartData.hasActivity && (
-                    <>
-                      <path
-                        d={`${getTrendPath(chartData.leads, chartData.max)} L ${chartBounds.right} ${chartBounds.bottom} L ${chartBounds.left} ${chartBounds.bottom} Z`}
-                        className="crm-chart-area-blue"
-                      />
-                      <path d={getTrendPath(chartData.leads, chartData.max)} className="crm-chart-line-blue" />
-                      <path d={getTrendPath(chartData.won, chartData.max)} className="crm-chart-line-violet" />
-                      {chartData.leads.map((value, index) => (
-                        <circle
-                          key={`lead-${chartData.labels[index]}`}
-                          cx={getChartX(index, chartData.leads.length)}
-                          cy={getChartY(value, chartData.max)}
-                          r="4"
-                          className="fill-blue-600 stroke-white stroke-2"
-                        >
-                          <title>{`${chartData.labels[index]}: ${value} new leads`}</title>
-                        </circle>
-                      ))}
-                      {chartData.won.map((value, index) => (
-                        <circle
-                          key={`won-${chartData.labels[index]}`}
-                          cx={getChartX(index, chartData.won.length)}
-                          cy={getChartY(value, chartData.max)}
-                          r="4"
-                          className="fill-violet-600 stroke-white stroke-2"
-                        >
-                          <title>{`${chartData.labels[index]}: ${value} conversions`}</title>
-                        </circle>
-                      ))}
-                    </>
+          {!accessToken ? (
+            <section className="rounded-2xl border border-blue-100 bg-white px-5 py-10 text-center shadow-sm" aria-labelledby="dashboard-signin-title">
+              <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-blue-700"><MdGroups size={23} /></span>
+              <h2 id="dashboard-signin-title" className="mt-4 text-lg font-bold text-slate-900">Sign in to view your workspace</h2>
+              <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">Your lead totals, pipeline, follow-ups, and reports are private and available after you sign in.</p>
+              <span className="mt-3 block text-xs font-medium text-slate-600">Use the Login button above to continue.</span>
+            </section>
+          ) : (
+            <>
+              {(leadError || taskError || notice) && (
+                <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${leadError || taskError ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role={leadError || taskError ? "alert" : "status"}>
+                  <span>{leadError || taskError || notice}</span>
+                  {(leadError || taskError) && (
+                    <button type="button" className="inline-flex items-center gap-1 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={handleRetry} disabled={loading || refreshing}>
+                      <MdRefresh size={16} /> {refreshing ? "Retrying…" : "Retry"}
+                    </button>
                   )}
-                </svg>
-                {!chartData.hasActivity && (
-                  <p className="absolute inset-0 grid place-items-center text-center text-xs font-medium text-slate-400">
-                    No lead activity during this period
-                  </p>
-                )}
-              </div>
-              <div className="crm-chart-x-labels" style={{ gridTemplateColumns: `repeat(${chartData.labels.length}, minmax(0, 1fr))` }}>
-                {chartData.labels.map((label) => <span key={label}>{label}</span>)}
-              </div>
-            </section>
+                  {notice && <button type="button" aria-label="Dismiss message" onClick={() => setNotice("")}>Dismiss</button>}
+                </div>
+              )}
 
-            <section className="crm-dashboard-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Lead sources</h2><p>Where your leads come from</p></div>
-                <span className="crm-period-label">All time</span>
-              </div>
-              <div className="crm-source-list">
-                {sourceStats.length ? sourceStats.map((source, index) => (
-                  <div className="crm-source-item" key={source.name}>
-                    <span className={`crm-source-icon crm-source-${sourceColors[index]}`}><MdPersonAddAlt1 size={17} /></span>
-                    <div className="crm-source-content">
-                      <div className="crm-source-label"><strong>{source.name}</strong><span>{source.percentage}%</span></div>
-                      <div className="crm-source-track"><span className={`crm-source-fill crm-source-fill-${sourceColors[index]}`} style={{ width: `${source.percentage}%` }} /></div>
+              {loading && !leads.length ? (
+                <div className="space-y-4" aria-label="Loading dashboard data" aria-busy="true">
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl border border-slate-200 bg-white" />)}</div>
+                  <div className="grid gap-4 lg:grid-cols-[1.55fr_.85fr]"><div className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" /><div className="h-64 animate-pulse rounded-xl border border-slate-200 bg-white" /></div>
+                  <div className="h-48 animate-pulse rounded-xl border border-slate-200 bg-white" />
+                </div>
+              ) : leadError && !leads.length ? (
+                <section className="rounded-2xl border border-rose-200 bg-white px-5 py-8 text-center shadow-sm" aria-labelledby="dashboard-data-error">
+                  <h2 id="dashboard-data-error" className="text-lg font-bold text-slate-900">Dashboard data is unavailable</h2>
+                  <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">{leadError}</p>
+                  <button type="button" className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-50" onClick={handleRetry} disabled={refreshing}>
+                    <MdRefresh size={17} /> {refreshing ? "Retrying…" : "Retry"}
+                  </button>
+                </section>
+              ) : (
+                <>
+                  <section className="crm-dashboard-overview" aria-labelledby="dashboard-summary-title">
+                    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h2 id="dashboard-summary-title" className="text-sm font-bold text-slate-900">Lead summary</h2>
+                        <p className="mt-1 text-xs text-slate-600">{rangeValid ? `${rangeLabel} · leads created in this period; statuses are current` : "Choose a valid date range."}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {refreshing && <span className="text-xs font-medium text-slate-600" role="status"><MdRefresh className="mr-1 inline animate-spin" />Refreshing…</span>}
+                        <label htmlFor="dashboard-range-preset" className="text-xs font-semibold text-slate-700">Date range</label>
+                        <select
+                          id="dashboard-range-preset"
+                          value={rangePreset}
+                          onChange={(event) => {
+                            const nextPreset = event.target.value;
+                            setRangePreset(nextPreset);
+                            if (nextPreset !== "custom") {
+                              const days = RANGE_PRESETS.find((item) => item.value === nextPreset)?.days;
+                              if (days) setCustomRange(getRangeForPreset(days));
+                            }
+                          }}
+                          className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                        >
+                          {RANGE_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+                          <option value="custom">Custom range</option>
+                        </select>
+                        {rangePreset === "custom" && (
+                          <div className="flex flex-wrap items-center gap-2">
+                          <label>
+                            <span className="sr-only">Start date</span>
+                            <input type="date" aria-label="Start date" value={customRange.start} max={customRange.end || undefined} onChange={(event) => setCustomRange((range) => ({ ...range, start: event.target.value }))} className="min-h-9 rounded-lg border border-slate-300 px-2 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" />
+                          </label>
+                          <span className="text-xs text-slate-600" aria-hidden="true">to</span>
+                          <label>
+                            <span className="sr-only">End date</span>
+                            <input type="date" aria-label="End date" value={customRange.end} min={customRange.start || undefined} max={toDateKey(new Date())} onChange={(event) => setCustomRange((range) => ({ ...range, end: event.target.value }))} className="min-h-9 rounded-lg border border-slate-300 px-2 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" />
+                          </label>
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    {rangePreset === "custom" && <p className="mb-3 text-xs text-slate-500">Dates use your device time zone ({Intl.DateTimeFormat().resolvedOptions().timeZone || "local time"}).</p>}
+                    {!rangeValid && <p className="mb-3 text-xs font-medium text-rose-700" role="alert">Start date must be on or before the end date.</p>}
+
+                    <div className="crm-metrics-grid">
+                      <article className="crm-dashboard-metric crm-metric-blue">
+                        <span className="crm-dashboard-metric-icon"><MdGroups size={21} /></span>
+                        <p>Total leads</p><strong>{leadMetrics.total}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? `Created ${rangeLabel.toLowerCase()}` : "No data yet"}</span>
+                      </article>
+                      <article className="crm-dashboard-metric crm-metric-violet">
+                        <span className="crm-dashboard-metric-icon"><MdCheckCircle size={21} /></span>
+                        <p>Won</p><strong>{leadMetrics.won}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
+                      </article>
+                      <article className="crm-dashboard-metric crm-metric-sky">
+                        <span className="crm-dashboard-metric-icon"><MdBolt size={21} /></span>
+                        <p>Active</p><strong>{leadMetrics.active}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? "Not marked Won or Lost" : "No data yet"}</span>
+                      </article>
+                      <article className="crm-dashboard-metric crm-metric-rose">
+                        <span className="crm-dashboard-metric-icon"><MdTrendingDown size={21} /></span>
+                        <p>Lost</p><strong>{leadMetrics.lost}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
+                      </article>
+                    </div>
+                  </section>
+
+                  <div className="crm-dashboard-grid crm-dashboard-grid-primary">
+                    <section className="crm-dashboard-card" aria-labelledby="dashboard-trend-title">
+                      <div className="crm-dashboard-card-heading">
+                        <div><h2 id="dashboard-trend-title">Lead creation trend</h2><p>Leads created by date · conversion timestamps are not stored · {rangeLabel}</p></div>
+                      </div>
+                      {chartData.hasActivity ? (
+                        <>
+                          <div className="crm-chart-legend"><span><i className="crm-legend-blue" />Leads created</span></div>
+                          <div className="crm-line-chart crm-dashboard-line-chart">
+                            <div className="crm-chart-y-labels" aria-hidden="true">{chartData.ticks.map((tick) => <span key={tick.y}>{tick.value}</span>)}</div>
+                            <svg viewBox="0 0 720 190" role="img" aria-label={`Lead creation trend for ${rangeLabel}`}>
+                              {chartData.ticks.map((tick) => <line key={tick.y} x1={CHART_BOUNDS.left} y1={tick.y} x2={CHART_BOUNDS.right} y2={tick.y} className="crm-chart-gridline" />)}
+                              <path d={`${getTrendPath(chartData.values, chartData.max)} L ${CHART_BOUNDS.right} ${CHART_BOUNDS.bottom} L ${CHART_BOUNDS.left} ${CHART_BOUNDS.bottom} Z`} className="crm-chart-area-blue" />
+                              <path d={getTrendPath(chartData.values, chartData.max)} className="crm-chart-line-blue" />
+                              {chartData.values.map((value, index) => (
+                                <circle key={chartData.boundaries[index].start} cx={getChartX(index, chartData.values.length)} cy={getChartY(value, chartData.max)} r="4" className="fill-blue-600 stroke-white stroke-2">
+                                  <title>{`${chartData.labels[index]}: ${value} lead${value === 1 ? "" : "s"} created`}</title>
+                                </circle>
+                              ))}
+                            </svg>
+                          </div>
+                          <div className="crm-chart-x-labels" style={{ gridTemplateColumns: `repeat(${chartData.labels.length}, minmax(0, 1fr))` }}>
+                            {chartData.labels.map((label, index) => <span key={chartData.boundaries[index].start}>{label}</span>)}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex min-h-20 items-center gap-3 px-5 py-5 text-sm text-slate-600">
+                          <MdTrendingDown size={19} />
+                          <span>{rangeValid && leads.length ? "No leads were created in this period." : "No lead creation data for this period yet."}</span>
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="crm-dashboard-card" aria-labelledby="dashboard-sources-title">
+                      <div className="crm-dashboard-card-heading">
+                        <div><h2 id="dashboard-sources-title">Lead sources</h2><p>Source values recorded in this period</p></div>
+                      </div>
+                      {sourceStats.length ? (
+                        <div className="crm-source-list">
+                          {sourceStats.map((source, index) => (
+                            <div className="crm-source-item" key={source.name}>
+                              <span className={`crm-source-icon crm-source-${["blue", "violet", "green", "pink", "slate"][index]}`}><MdPersonAddAlt1 size={17} /></span>
+                              <div className="crm-source-content">
+                                <div className="crm-source-label"><strong title={source.name}>{source.name}</strong><span>{source.count} · {source.percentage}%</span></div>
+                                <div className="crm-source-track"><span className={`crm-source-fill crm-source-fill-${["blue", "violet", "green", "pink", "slate"][index]}`} style={{ width: `${source.percentage}%` }} /></div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex min-h-20 items-center gap-3 px-5 py-5 text-sm text-slate-600">
+                          <MdPersonAddAlt1 size={19} />
+                          <span>No source values recorded in this period.</span>
+                        </div>
+                      )}
+                    </section>
                   </div>
-                )) : <p className="crm-dashboard-empty">Add leads to see your sources.</p>}
-              </div>
-            </section>
-          </div>
 
-          <div className="crm-dashboard-grid crm-dashboard-grid-secondary">
-            <section className="crm-dashboard-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Sales pipeline</h2><p>Leads by current stage</p></div>
-                <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View leads <MdArrowForward /></button>
-              </div>
-              <div className="crm-pipeline-stages">
-                {pipelineCounts.map((item, index) => (
-                  <div className={`crm-pipeline-stage crm-pipeline-stage-${index}`} key={item.stage}>
-                    <span>{item.stage === "Won" ? "Closed" : item.stage}</span>
-                    <strong>{item.count}</strong>
+                  <div className="crm-dashboard-grid crm-dashboard-grid-secondary">
+                    <section className="crm-dashboard-card" aria-labelledby="dashboard-pipeline-title">
+                      <div className="crm-dashboard-card-heading">
+                        <div><h2 id="dashboard-pipeline-title">Current lead pipeline</h2><p>Current status across all {pipelineTotal} workspace leads · stages reconcile to total</p></div>
+                        <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View leads <MdArrowForward /></button>
+                      </div>
+                      {pipelineTotal ? (
+                        <div className="space-y-3 px-5 pb-5">
+                          {pipelineCounts.map((stage, index) => (
+                            <div className="grid grid-cols-[minmax(75px,auto)_minmax(40px,1fr)_2rem] items-center gap-3 text-xs" key={stage.name}>
+                              <span className="font-semibold text-slate-700">{stage.name}</span>
+                              <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={`${stage.name} leads`} aria-valuemin="0" aria-valuemax={pipelineTotal} aria-valuenow={stage.count}>
+                                <span className={`block h-full rounded-full ${["bg-blue-600", "bg-sky-600", "bg-cyan-600", "bg-indigo-600", "bg-amber-500", "bg-emerald-600", "bg-rose-600"][index]}`} style={{ width: `${(stage.count / pipelineTotal) * 100}%` }} />
+                              </div>
+                              <strong className="text-right text-slate-900">{stage.count}</strong>
+                            </div>
+                          ))}
+                          {pipelineUnclassified > 0 && (
+                            <div className="grid grid-cols-[minmax(75px,auto)_minmax(40px,1fr)_2rem] items-center gap-3 text-xs">
+                              <span className="font-semibold text-slate-700">Unclassified</span>
+                              <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="Unclassified leads" aria-valuemin="0" aria-valuemax={pipelineTotal} aria-valuenow={pipelineUnclassified}>
+                                <span className="block h-full rounded-full bg-slate-500" style={{ width: `${(pipelineUnclassified / pipelineTotal) * 100}%` }} />
+                              </div>
+                              <strong className="text-right text-slate-900">{pipelineUnclassified}</strong>
+                            </div>
+                          )}
+                        </div>
+                      ) : <div className="flex min-h-20 items-center gap-3 px-5 py-5 text-sm text-slate-600"><MdGroups size={19} /><span>No leads yet. Add your first lead to build your pipeline.</span></div>}
+                    </section>
+
+                    <section className="crm-dashboard-card" aria-labelledby="dashboard-tasks-title">
+                      <div className="crm-dashboard-card-heading">
+                        <div><h2 id="dashboard-tasks-title">Upcoming tasks</h2><p>Pending follow-ups · {Intl.DateTimeFormat().resolvedOptions().timeZone || "device time"} · priority not tracked</p></div>
+                        <button className="crm-text-link" type="button" onClick={() => navigate("/follow-ups")}>View all <MdArrowForward /></button>
+                      </div>
+                      {taskError ? (
+                        <div className="px-5 py-4 text-sm text-slate-600" role="status">
+                          <p className="mb-2">Follow-ups are unavailable. Lead data is still shown above.</p>
+                          <button type="button" onClick={handleRetry} disabled={refreshing}>{refreshing ? "Retrying…" : "Retry"}</button>
+                        </div>
+                      ) : pendingFollowUps.length ? (
+                        <div className="px-4 pb-3">
+                          {Object.entries(groupedTasks).map(([groupName, tasks]) => tasks.length > 0 && (
+                            <section className="border-b border-slate-100 py-2 last:border-0" key={groupName} aria-label={`${groupName} follow-ups`}>
+                              <h3 className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-600">{groupName} <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px]">{tasks.length}</span></h3>
+                              {tasks.slice(0, 3).map((item) => (
+                                <article className="flex items-center gap-2 border-t border-slate-100 py-2" key={item._id}>
+                                  <button
+                                    type="button"
+                                    aria-label={`Complete ${item.type} follow-up${item.leadId?.name ? ` for ${item.leadId.name}` : ""}`}
+                                    title="Mark complete"
+                                    disabled={completingIds.includes(item._id)}
+                                    onClick={() => handleCompleteFollowUp(item)}
+                                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-wait disabled:opacity-50"
+                                  >
+                                    {completingIds.includes(item._id) ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" /> : <MdCheck size={16} />}
+                                  </button>
+                                  <div className="min-w-0 flex-1">
+                                    <a className="block truncate text-xs font-semibold text-slate-800 hover:text-blue-700" href={item.leadId?._id ? `/lead/${item.leadId._id}` : "/leads"} title={item.leadId?.name || "Open leads"}>{item.leadId?.name || "Lead unavailable"}</a>
+                                    <span className="block truncate text-[11px] text-slate-600">{item.type}{item.leadId?.company ? ` · ${item.leadId.company}` : ""}</span>
+                                  </div>
+                                  <time className="flex shrink-0 flex-col text-right text-[11px] font-medium text-slate-600" dateTime={`${item.scheduledDate}T${item.scheduledTime}`}>
+                                    <span>{formatDate(item.scheduledDate, { day: "numeric", month: "short" })}</span>
+                                    <span>{item.scheduledTime}</span>
+                                  </time>
+                                </article>
+                              ))}
+                              {tasks.length > 3 && <button type="button" className="mt-1 text-xs font-semibold text-blue-700 hover:text-blue-900" onClick={() => navigate("/follow-ups")}>View {tasks.length - 3} more {groupName.toLowerCase()}</button>}
+                            </section>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex min-h-20 items-center gap-3 px-5 py-5 text-sm text-slate-600"><MdCheckCircle size={19} /><span>No pending follow-ups scheduled.</span></div>
+                      )}
+                    </section>
                   </div>
-                ))}
-              </div>
-            </section>
 
-            <section className="crm-dashboard-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Upcoming tasks</h2><p>Your next scheduled follow-ups</p></div>
-                <button className="crm-text-link" type="button" onClick={() => navigate("/follow-ups")}>View all <MdArrowForward /></button>
-              </div>
-              <ul className="crm-dashboard-task-list">
-                {upcomingFollowUps.slice(0, 4).map((item) => (
-                  <li key={item._id}>
-                    <span className="crm-task-status-dot" />
-                    <span className="crm-task-name">{item.type} {item.leadId?.name ? `with ${item.leadId.name}` : ""}</span>
-                    <span className="crm-task-date">{item.scheduledDate}</span>
-                  </li>
-                ))}
-                {upcomingFollowUps.length === 0 && <li className="crm-dashboard-empty">No upcoming tasks scheduled.</li>}
-              </ul>
-            </section>
-          </div>
+                  <section className="crm-dashboard-card crm-dashboard-recent-card" aria-labelledby="dashboard-recent-title">
+                    <div className="crm-dashboard-card-heading">
+                      <div><h2 id="dashboard-recent-title">Recent leads</h2><p>{matchingLeads.length} matching leads · created during {rangeLabel}{search ? " · filtered by search" : ""}</p></div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={handleExportCSV} disabled={!matchingLeads.length}>
+                          <MdDownload size={16} /> Export CSV
+                        </button>
+                        <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View all <MdArrowForward /></button>
+                      </div>
+                    </div>
+                    {leadError ? (
+                      <div className="px-5 py-4 text-sm text-slate-600" role="status"><span>Lead list unavailable until the API connection is restored.</span></div>
+                    ) : recentLeads.length ? (
+                      <div className="w-full overflow-x-auto" role="region" aria-label="Recent leads table" tabIndex="0">
+                        <table className="w-full min-w-[790px] table-fixed border-collapse text-left text-xs">
+                          <colgroup><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[22%]" /><col className="w-[13%]" /><col className="w-[17%]" /><col className="w-[12%]" /></colgroup>
+                          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-600"><tr className="border-y border-slate-200"><th scope="col" className="px-4 py-3">Name</th><th scope="col" className="px-3 py-3">Company</th><th scope="col" className="px-3 py-3">Contact</th><th scope="col" className="px-3 py-3">Status</th><th scope="col" className="px-3 py-3">Created</th><th scope="col" className="px-3 py-3">Actions</th></tr></thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-700">
+                            {recentLeads.map((record) => (
+                              <tr key={record._id} className="hover:bg-slate-50">
+                                <td className="max-w-0 px-4 py-3"><a className="block truncate font-semibold text-blue-700 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" href={`/lead/${record._id}`} title={record.name || "Unnamed lead"}>{record.name || "Unnamed lead"}</a></td>
+                                <td className="max-w-0 px-3 py-3"><span className="block truncate" title={record.company || "No company"}>{record.company || "—"}</span></td>
+                                <td className="max-w-0 px-3 py-3">
+                                  <span className="block truncate" title={record.email || "No email"}>{record.email || "—"}</span>
+                                  {record.phone && <span className="mt-0.5 block truncate text-[11px] text-slate-600" title={record.phone}>{record.phone}</span>}
+                                </td>
+                                <td className="px-3 py-3"><span className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />{record.status || "New"}</span></td>
+                                <td className="px-3 py-3 text-[11px] text-slate-600"><time dateTime={record.createdAt}>{formatTimestamp(record.createdAt)}</time></td>
+                                <td className="px-3 py-3">
+                                  <div className="flex items-center gap-1">
+                                    <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={() => navigate(`/lead/${record._id}`)} aria-label={`Edit ${record.name || "lead"}`} title="Edit lead">Edit</button>
+                                    <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400" onClick={() => handleDeleteLead(record._id)} aria-label={`Delete ${record.name || "lead"}`} title="Delete lead">Delete</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+                        <p className="text-sm font-medium text-slate-700">{search ? "No matching results for this search." : leads.length ? "No leads were created in this date range." : "No leads yet."}</p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                          {(search || rangePreset !== "30days" || (leads.length > 0 && !recentLeads.length)) && <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={clearFilters}><MdRefresh size={16} /> Clear filters</button>}
+                          {!search && !leads.length && (
+                            <>
+                              <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={() => navigate("/leads/new")}><MdAdd size={17} /> Add your first lead</button>
+                              <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" onClick={openImport}><MdFileUpload size={17} /> Import leads</button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </section>
 
-          <div className="crm-dashboard-grid crm-dashboard-grid-secondary">
-            <section className="crm-dashboard-card crm-recent-leads-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Recent leads</h2><p>Your latest opportunities in one view</p></div>
-                <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View all <MdArrowForward /></button>
-              </div>
-              <LeadTable
-                leads={filteredLeads.length ? recentLeads.filter((lead) => filteredLeads.some((item) => item._id === lead._id)).slice(0, 5) : []}
-                customFields={customFields}
-                onView={(id) => navigate(`/lead/${id}`)}
-                onDelete={handleDeleteLead}
-                onEdit={(id) => navigate(`/lead/${id}`)}
-                onStatusChange={handleStatusChange}
-              />
-            </section>
-
-            <section className="crm-dashboard-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Recent activity</h2><p>Latest leads added to your workspace</p></div>
-                <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View all <MdArrowForward /></button>
-              </div>
-              <ul className="crm-dashboard-activity-list">
-                {recentLeads.slice(0, 5).map((lead) => (
-                  <li key={lead._id}>
-                    <span className="crm-activity-avatar">{lead.name?.slice(0, 1).toUpperCase() || "L"}</span>
-                    <span className="crm-activity-copy">
-                      <strong>{lead.name || "New lead"}</strong>
-                      <small>{lead.company || "Lead"} · {lead.status || "New"}</small>
-                    </span>
-                    <span className="crm-activity-status">{lead.status || "New"}</span>
-                  </li>
-                ))}
-                {recentLeads.length === 0 && <li className="crm-dashboard-empty">New lead activity will appear here.</li>}
-              </ul>
-            </section>
-          </div>
-
-          <div className="crm-dashboard-grid crm-dashboard-grid-secondary crm-dashboard-grid-bottom">
-            <section className="crm-dashboard-card crm-conversion-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Conversion rate</h2><p>Leads converted to won</p></div>
-              </div>
-              <div className="crm-conversion-content">
-                <div className="crm-conversion-donut" style={{ "--conversion-rate": `${leadMetrics.conversionRate}%` }}>
-                  <div><strong>{leadMetrics.conversionRate}%</strong><span>Conversion</span></div>
-                </div>
-                <div className="crm-conversion-legend">
-                  <p><i className="crm-legend-blue" /><strong>{leadMetrics.total}</strong> Total leads</p>
-                  <p><i className="crm-legend-green" /><strong>{leadMetrics.converted}</strong> Converted</p>
-                  <p><i className="crm-legend-amber" /><strong>{leadMetrics.inProgress}</strong> In progress</p>
-                  <p><i className="crm-legend-rose" /><strong>{leadMetrics.lost}</strong> Lost</p>
-                </div>
-              </div>
-            </section>
-
-            <section className="crm-dashboard-card">
-              <div className="crm-dashboard-card-heading">
-                <div><h2>Pipeline health</h2><p>Current lead distribution by stage</p></div>
-              </div>
-              <div className="crm-health-list">
-                {statusCounts.map((item, index) => (
-                  <div className="crm-health-row" key={item.name}>
-                    <span>{item.name}</span>
-                    <div className="crm-health-track"><i style={{ width: `${(item.count / maxStatusCount) * 100}%` }} /></div>
-                    <strong>{item.count}</strong>
-                    {index === 0 && <span className="crm-health-spacer" />}
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <button className="crm-dashboard-export" type="button" onClick={handleExportCSV}>
-            <span><strong>Export lead report</strong><small>Download a CSV snapshot of your leads.</small></span>
-            <MdArrowForward size={19} />
-          </button>
+                  <section className="crm-dashboard-card crm-dashboard-activity-card" aria-labelledby="dashboard-activity-title">
+                    <div className="crm-dashboard-card-heading">
+                      <div><h2 id="dashboard-activity-title">Recently added leads</h2><p>Lead records sorted by creation time · no separate status-change audit history is stored.</p></div>
+                      <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View leads <MdArrowForward /></button>
+                    </div>
+                    {recentCreated.length ? (
+                      <ul className="crm-dashboard-activity-list">
+                        {recentCreated.map((record) => (
+                          <li key={record._id}>
+                            <span className="crm-activity-avatar">{record.name?.slice(0, 1).toUpperCase() || "L"}</span>
+                            <div className="min-w-0 flex-1">
+                              <a className="block truncate text-xs font-semibold text-slate-800 hover:text-blue-700" href={`/lead/${record._id}`} title={record.name || "New lead"}>{record.name || "New lead"}</a>
+                              <p className="mt-1 truncate text-[11px] text-slate-600">{record.company || "No company"} · {record.status || "New"}</p>
+                            </div>
+                            <time className="shrink-0 text-right text-[10px] text-slate-600" dateTime={record.createdAt}>{formatTimestamp(record.createdAt)}</time>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <div className="px-5 py-4 text-sm text-slate-600"><span>No activity in this workspace yet.</span></div>}
+                  </section>
+                </>
+              )}
+            </>
+          )}
         </div>
       </main>
     </div>

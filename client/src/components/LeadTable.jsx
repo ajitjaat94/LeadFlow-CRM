@@ -9,6 +9,7 @@ import {
   MdVisibility,
 } from "react-icons/md";
 import { createPortal } from "react-dom";
+import { LEAD_STATUSES } from "../data/leadStatuses";
 
 const statusStyles = {
   New: "border-violet-200 bg-violet-50 text-violet-700",
@@ -19,8 +20,6 @@ const statusStyles = {
   Won: "border-emerald-200 bg-emerald-50 text-emerald-800",
   Lost: "border-rose-200 bg-rose-50 text-rose-700",
 };
-
-const statusOptions = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
 
 const statusDotStyles = {
   New: "bg-purple-500",
@@ -100,7 +99,7 @@ const StatusPicker = ({ status, onChange }) => {
       </button>
       {open && createPortal(
         <div ref={menuRef} className="fixed z-[100] max-h-64 min-w-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" style={menuPosition} role="listbox">
-          {statusOptions.map((option) => (
+          {LEAD_STATUSES.map((option) => (
             <button
               type="button"
               role="option"

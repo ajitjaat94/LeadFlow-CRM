@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   MdAdd,
@@ -17,6 +17,8 @@ const DashboardTopbar = ({
   authRequired = false,
   onAuthenticated,
   onToggleSidebar,
+  onNotificationsClick,
+  searchPlaceholder = "Search leads, contacts, deals...",
   sidebarOpen = false,
 }) => {
   const navigate = useNavigate();
@@ -29,6 +31,18 @@ const DashboardTopbar = ({
       return null;
     }
   });
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    const focusSearch = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
 
   const handleAuthSuccess = (authData) => {
     const greetingExpiresAt = Date.now() + 2 * 60 * 1000;
@@ -59,7 +73,7 @@ const DashboardTopbar = ({
           className="crm-menu-button"
           type="button"
           aria-label="Open sidebar"
-          aria-expanded={false}
+          aria-expanded={sidebarOpen}
           onClick={onToggleSidebar}
         >
           <MdMenu size={22} />
@@ -68,15 +82,19 @@ const DashboardTopbar = ({
         <div className="crm-search-wrap">
           <MdSearch size={20} />
           <input
+            ref={searchInputRef}
             value={searchTerm}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search leads, contacts, deals..."
-            aria-label="Search leads, contacts, and deals"
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder.replace("…", "").replace("...", "")}
           />
           <kbd>Ctrl K</kbd>
         </div>
         <div className="crm-topbar-actions">
-          <button className="crm-icon-button" type="button" aria-label="Notifications">
+          <button className="crm-icon-button" type="button" aria-label={onNotificationsClick ? (user ? "Open follow-ups" : "Sign in to view follow-ups") : "Notifications"} onClick={onNotificationsClick ? () => {
+            if (!user) setAuthModalOpen(true);
+            else onNotificationsClick();
+          } : undefined}>
             <MdNotificationsNone size={22} />
           </button>
           {user ? (

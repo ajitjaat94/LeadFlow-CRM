@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:3000/api" : "https://leadflow-crm-1pxe.onrender.com/api");
+const API_BASE_URL = "https://leadflow-crm-77e8.onrender.com/api";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -93,6 +93,12 @@ export const deleteLeadField = async (id) => {
 export const getFollowUps = async (status) => {
   const { data } = await api.get("/follow-ups", { params: status && status !== "All" ? { status } : undefined });
   return data.data || [];
+};
+
+export const getDashboardFollowUps = async () => {
+  const { data } = await api.get("/follow-ups");
+  if (!Array.isArray(data.data)) throw new Error("The follow-ups API returned an invalid response.");
+  return data.data;
 };
 
 export const getLeadFollowUps = async (leadId) => {

@@ -1,0 +1,21 @@
+{
+  "rewrites": [
+    { "source": "/dashboard", "destination": "/index.html" },
+    { "source": "/leads", "destination": "/index.html" },
+    { "source": "/leads/new", "destination": "/index.html" },
+    { "source": "/contacts", "destination": "/index.html" },
+    { "source": "/deals", "destination": "/index.html" },
+    { "source": "/follow-ups", "destination": "/index.html" },
+    { "source": "/calendar", "destination": "/index.html" },
+    { "source": "/reports", "destination": "/index.html" },
+    { "source": "/team", "destination": "/index.html" },
+    { "source": "/settings", "destination": "/index.html" },
+    { "source": "/companies", "destination": "/index.html" },
+    { "source": "/tasks", "destination": "/index.html" },
+    { "source": "/automation", "destination": "/index.html" },
+    { "source": "/about", "destination": "/index.html" },
+    { "source": "/contact", "destination": "/index.html" },
+    { "source": "/lead/:id", "destination": "/index.html" },
+    { "source": "/join/:token", "destination": "/index.html" }
+  ]
+}

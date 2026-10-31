@@ -17,7 +17,7 @@ const primaryLinks = [
   { label: "Leads", href: "/leads", icon: MdPeople },
   { label: "Contacts", href: "/contacts", icon: MdContacts },
   { label: "Deals", href: "/deals", icon: MdShowChart },
-  { label: "Tasks", href: "/follow-ups", icon: MdDescription },
+  { label: "Follow-ups", href: "/follow-ups", icon: MdDescription },
   { label: "Calendar", href: "/calendar", icon: MdCalendarToday },
   { label: "Reports", href: "/reports", icon: MdShowChart },
   { label: "Team", href: "/team", icon: MdGroup },

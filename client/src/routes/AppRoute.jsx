@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Link, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import Dashboard from "../pages/Dashboard";
 import Leads from "../pages/Leads";
 import LeadForm from "../pages/LeadForm";
@@ -15,8 +15,40 @@ import Reports from "../pages/Reports";
 import Team from "../pages/Team";
 import JoinWorkspace from "../pages/JoinWorkspace";
 
+const NotFound = () => (
+  <main className="grid min-h-screen place-items-center bg-slate-50 px-5 py-12">
+    <section className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+      <p className="text-sm font-bold uppercase tracking-[0.16em] text-blue-700">LeadFlow CRM</p>
+      <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">Page not found</h1>
+      <p className="mt-2 text-sm leading-6 text-slate-600">The page may have moved or the address may be incorrect.</p>
+      <Link
+        className="mt-6 inline-flex min-h-10 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2"
+        to="/"
+      >
+        Go to dashboard
+      </Link>
+    </section>
+  </main>
+);
+
 const AppRoute = () => {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleSessionExpired = (event) => {
+      navigate("/", {
+        replace: true,
+        state: {
+          authRequired: true,
+          sessionExpired: true,
+          returnTo: event.detail?.returnTo || pathname,
+        },
+      });
+    };
+    window.addEventListener("leadflow:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("leadflow:session-expired", handleSessionExpired);
+  }, [navigate, pathname]);
 
   useEffect(() => {
     const titles = {
@@ -41,7 +73,7 @@ const AppRoute = () => {
       ? "Edit lead"
       : pathname.startsWith("/join/")
         ? "Join workspace"
-        : titles[pathname] || "Workspace";
+        : titles[pathname] || "Page not found";
     document.title = `LeadFlow CRM | ${title}`;
   }, [pathname]);
 
@@ -64,6 +96,7 @@ const AppRoute = () => {
       {["companies", "tasks", "automation", "settings"].map((section) => (
         <Route key={section} path={`/${section}`} element={<WorkspacePage section={section} />} />
       ))}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };

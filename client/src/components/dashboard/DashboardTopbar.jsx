@@ -9,12 +9,27 @@ import {
 } from "react-icons/md";
 import AuthModal from "../AuthModal";
 
+const getInternalReturnPath = (value) => {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "/dashboard";
+  }
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.origin !== window.location.origin) return "/dashboard";
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return "/dashboard";
+  }
+};
+
 const DashboardTopbar = ({
   searchTerm,
   onSearchChange,
   onAddLead,
   addButtonLabel = "Add lead",
   authRequired = false,
+  authNotice = "",
+  returnTo = "",
   onAuthenticated,
   onToggleSidebar,
   onNotificationsClick,
@@ -46,6 +61,15 @@ const DashboardTopbar = ({
     return () => window.removeEventListener("keydown", focusSearch);
   }, [hideSearch]);
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null);
+      setAuthModalOpen(true);
+    };
+    window.addEventListener("leadflow:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("leadflow:session-expired", handleSessionExpired);
+  }, []);
+
   const handleAuthSuccess = (authData) => {
     const greetingExpiresAt = Date.now() + 2 * 60 * 1000;
     localStorage.setItem("accessToken", authData.accessToken);
@@ -54,7 +78,7 @@ const DashboardTopbar = ({
     setUser(authData.user);
     onAuthenticated?.({ ...authData, greetingExpiresAt });
     setAuthModalOpen(false);
-    navigate("/dashboard", { replace: true, state: { greetingExpiresAt } });
+    navigate(getInternalReturnPath(returnTo), { replace: true, state: { greetingExpiresAt } });
   };
 
   const handleLogout = () => {
@@ -150,6 +174,7 @@ const DashboardTopbar = ({
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onAuthSuccess={handleAuthSuccess}
+        authNotice={authNotice}
       />
     </>
   );

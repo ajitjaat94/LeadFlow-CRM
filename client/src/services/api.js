@@ -10,6 +10,8 @@ const api = axios.create({
   },
 });
 
+let sessionExpirationHandled = false;
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("accessToken");
   if (token) {
@@ -22,11 +24,17 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const requestUrl = error.config?.url || "";
-    if (error.response?.status === 401 && !requestUrl.includes("/auth/")) {
+    const authMessage = String(error.response?.data?.message || "").trim().toLowerCase();
+    const confirmedInvalidSession = error.response?.status === 401
+      && !requestUrl.includes("/auth/")
+      && ["jwt expired", "invalid token", "please login again"].includes(authMessage);
+    if (confirmedInvalidSession && !sessionExpirationHandled) {
+      sessionExpirationHandled = true;
+      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.dispatchEvent(new CustomEvent("leadflow:session-expired", { detail: { returnTo } }));
       localStorage.removeItem("accessToken");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-      window.location.assign("/");
     }
     return Promise.reject(error);
   },
@@ -34,11 +42,13 @@ api.interceptors.response.use(
 
 export const loginUser = async (payload) => {
   const { data } = await api.post("/auth/login", payload);
+  sessionExpirationHandled = false;
   return data;
 };
 
 export const signupUser = async (payload) => {
   const { data } = await api.post("/auth/signup", payload);
+  sessionExpirationHandled = false;
   return data;
 };
 

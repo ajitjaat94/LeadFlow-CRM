@@ -142,6 +142,20 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
+    const handleSessionExpired = () => {
+      setAccessToken(null);
+      setLeads([]);
+      setFollowUps([]);
+      setLoading(false);
+      setRefreshing(false);
+      setLeadError("");
+      setTaskError("");
+    };
+    window.addEventListener("leadflow:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("leadflow:session-expired", handleSessionExpired);
+  }, []);
+
+  useEffect(() => {
     if (!accessToken) {
       return undefined;
     }
@@ -429,6 +443,8 @@ const Dashboard = () => {
           searchPlaceholder="Search leads in this period…"
           onNotificationsClick={() => navigate("/follow-ups")}
           authRequired={location.state?.authRequired}
+          authNotice={location.state?.sessionExpired ? "Your session expired. Sign in again to continue where you left off." : ""}
+          returnTo={location.state?.returnTo || ""}
           onAuthenticated={(authData) => {
             setAccessToken(authData.accessToken);
             if (authData.accessToken && authData.greetingExpiresAt) {
@@ -665,7 +681,7 @@ const Dashboard = () => {
 
                     <section className="crm-dashboard-card" aria-labelledby="dashboard-tasks-title">
                       <div className="crm-dashboard-card-heading">
-                        <div><h2 id="dashboard-tasks-title">Upcoming tasks</h2><p>Pending follow-ups · times shown in {Intl.DateTimeFormat().resolvedOptions().timeZone || "your local time zone"}</p></div>
+                        <div><h2 id="dashboard-tasks-title">Upcoming follow-ups</h2><p>Pending follow-ups · times shown in {Intl.DateTimeFormat().resolvedOptions().timeZone || "your local time zone"}</p></div>
                         <button className="crm-text-link" type="button" onClick={() => navigate("/follow-ups")}>View all <MdArrowForward /></button>
                       </div>
                       {taskError ? (

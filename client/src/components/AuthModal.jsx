@@ -7,7 +7,7 @@ const initialForm = {
   password: "",
 };
 
-const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
+const AuthModal = ({ isOpen, onClose, onAuthSuccess, authNotice = "" }) => {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
@@ -42,12 +42,16 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
 
     try {
       const payload = mode === "login"
-        ? { email: form.email, password: form.password }
-        : { username: form.username, email: form.email, password: form.password };
+        ? { email: form.email.trim(), password: form.password }
+        : { username: form.username, email: form.email.trim(), password: form.password };
 
       const response = mode === "login"
         ? await loginUser(payload)
         : await signupUser(payload);
+
+      if (!response?.user || !response.accessToken || !response.refreshToken) {
+        throw new Error("The authentication service returned an incomplete response. Please try again.");
+      }
 
       const authData = {
         user: response.user,
@@ -64,10 +68,20 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
       const validationMessage = Array.isArray(validationErrors)
         ? validationErrors.map((item) => item.msg || item.message).join(" | ")
         : null;
-
-      setError(
-        validationMessage || serverData?.message || serverData?.error || "Authentication failed"
-      );
+      const status = err?.response?.status;
+      const fallbackMessage = mode === "login"
+        ? "Unable to sign in. Please check your details and try again."
+        : "Unable to create your account. Please try again.";
+      const errorMessage = err?.response
+        ? status === 401
+          ? "Email or password is incorrect. Check your details and try again."
+          : status >= 500
+            ? "The authentication service is temporarily unavailable. Try again shortly."
+            : validationMessage || (typeof serverData?.error === "string" ? serverData.error : serverData?.message) || fallbackMessage
+        : err.isAxiosError
+          ? "Unable to reach the authentication service. Check your connection and try again."
+          : err.message || fallbackMessage;
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -127,6 +141,7 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
+          {mode === "login" && authNotice && <p className="auth-feedback auth-notice" role="status">{authNotice}</p>}
           {mode === "signup" && (
             <div className="auth-field">
               <label htmlFor="auth-username">Full name</label>

@@ -168,6 +168,9 @@ const Contacts = () => {
   const [linkLeadId, setLinkLeadId] = useState("");
   const [mergeContactId, setMergeContactId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [relatedDataError, setRelatedDataError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
@@ -175,42 +178,69 @@ const Contacts = () => {
   const fileInputRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
 
-  const loadData = async () => {
-    try {
-      const [contactData, leadData, fields] = await Promise.all([
-        getContacts(showArchived),
-        getLeads(),
-        getLeadFields(),
-      ]);
-      setError("");
-      setContacts(contactData);
-      setLeads(leadData);
-      setCustomFields(fields);
-    } catch (requestError) {
-      setError(requestError.response?.data?.message || "Unable to load contacts. Check the API connection and try again.");
-    } finally {
-      setLoading(false);
+  const loadData = async (archived = showArchived) => {
+    const [contactResult, leadResult, fieldsResult] = await Promise.allSettled([
+      getContacts(archived),
+      getLeads(),
+      getLeadFields(),
+    ]);
+
+    if (contactResult.status === "fulfilled" && Array.isArray(contactResult.value)) {
+      setContacts(contactResult.value);
+      setLoadError("");
+    } else {
+      setLoadError("Unable to load contacts. Check your connection and retry.");
     }
+
+    const relatedErrors = [];
+    if (leadResult.status === "fulfilled" && Array.isArray(leadResult.value)) {
+      setLeads(leadResult.value);
+    } else {
+      setLeads([]);
+      relatedErrors.push("Linked leads are unavailable.");
+    }
+    if (fieldsResult.status === "fulfilled" && Array.isArray(fieldsResult.value)) {
+      setCustomFields(fieldsResult.value);
+    } else {
+      setCustomFields([]);
+      relatedErrors.push("Custom contact fields are unavailable.");
+    }
+    setRelatedDataError(relatedErrors.join(" "));
+    if (contactResult.status === "fulfilled") setError("");
+    setLoading(false);
   };
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getContacts(showArchived), getLeads(), getLeadFields()])
-      .then(([contactData, leadData, fields]) => {
+    Promise.allSettled([getContacts(showArchived), getLeads(), getLeadFields()])
+      .then(([contactResult, leadResult, fieldsResult]) => {
         if (cancelled) return;
-        setError("");
-        setContacts(contactData);
-        setLeads(leadData);
-        setCustomFields(fields);
-      })
-      .catch((requestError) => {
-        if (!cancelled) setError(requestError.response?.data?.message || "Unable to load contacts. Check the API connection and try again.");
+        if (contactResult.status === "fulfilled" && Array.isArray(contactResult.value)) {
+          setContacts(contactResult.value);
+          setLoadError("");
+          setError("");
+        } else {
+          setLoadError("Unable to load contacts. Check your connection and retry.");
+        }
+
+        const relatedErrors = [];
+        if (leadResult.status === "fulfilled" && Array.isArray(leadResult.value)) setLeads(leadResult.value);
+        else {
+          setLeads([]);
+          relatedErrors.push("Linked leads are unavailable.");
+        }
+        if (fieldsResult.status === "fulfilled" && Array.isArray(fieldsResult.value)) setCustomFields(fieldsResult.value);
+        else {
+          setCustomFields([]);
+          relatedErrors.push("Custom contact fields are unavailable.");
+        }
+        setRelatedDataError(relatedErrors.join(" "));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [showArchived]);
+  }, [retryCount, showArchived]);
 
   const availableTags = useMemo(() => [...new Set(contacts.flatMap((item) => item.tags || []))].sort(), [contacts]);
   const companies = useMemo(() => [...new Set(contacts.map((item) => item.company).filter(Boolean))].sort(), [contacts]);
@@ -219,12 +249,26 @@ const Contacts = () => {
     const query = searchTerm.trim().toLowerCase();
     return contacts.filter((item) => {
       const matchesSearch = !query || [item.name, item.phone, item.email].some((value) => value?.toLowerCase().includes(query));
-      const matchesCompany = !companyFilter || item.company === companyFilter;
+      const matchesCompany = !companyFilter || item.company?.toLowerCase() === companyFilter.toLowerCase();
       const matchesOwner = !ownerFilter || item.owner?._id === ownerFilter;
-      const matchesTag = !tagFilter || item.tags?.includes(tagFilter);
+      const matchesTag = !tagFilter || item.tags?.some((tag) => tag.toLowerCase() === tagFilter.toLowerCase());
       return matchesSearch && matchesCompany && matchesOwner && matchesTag;
     });
   }, [companyFilter, contacts, ownerFilter, searchTerm, tagFilter]);
+
+  const hasActiveFilters = Boolean(searchTerm.trim() || companyFilter || ownerFilter || tagFilter);
+  const clearFilters = () => {
+    setSearchTerm("");
+    setCompanyFilter("");
+    setOwnerFilter("");
+    setTagFilter("");
+  };
+  const retryLoad = () => {
+    setLoading(true);
+    setLoadError("");
+    setRelatedDataError("");
+    setRetryCount((count) => count + 1);
+  };
 
   const openDetails = async (item) => {
     setSelectedContact({ ...item, loadingDetails: true });
@@ -392,10 +436,11 @@ const Contacts = () => {
       anchor.href = url;
       anchor.download = "contacts.csv";
       anchor.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } else {
       downloadWorkbook(rows, "contacts.xlsx", "xlsx");
     }
+    setNotice(`Exported ${filteredContacts.length} matching contact${filteredContacts.length === 1 ? "" : "s"} from the ${showArchived ? "archived" : "active"} view.`);
   };
 
   const importFile = async (event) => {
@@ -461,12 +506,12 @@ const Contacts = () => {
   const inputBase = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
 
   return (
-    <div className={`crm-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
+    <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
       <DashboardSidebar isOpen={sidebarOpen} onClose={() => {
         if (window.innerWidth <= 760) setSidebarOpen(false);
       }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
-        <DashboardTopbar searchTerm={searchTerm} onSearchChange={setSearchTerm} onAddLead={() => startEditing(null)} addButtonLabel="Add contact" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
+        <DashboardTopbar searchTerm={searchTerm} onSearchChange={setSearchTerm} onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
         <div className="crm-page space-y-5">
           <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 shadow-sm shadow-blue-100/50 sm:flex sm:items-center sm:justify-between sm:p-6">
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-violet-500" />
@@ -474,18 +519,21 @@ const Contacts = () => {
               <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Workspace / people</p>
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">Contacts</h1>
-                <span className="rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-bold text-blue-700">{filteredContacts.length} {showArchived ? "archived" : "contacts"}</span>
+                <span className="rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-bold text-blue-700">{loading ? "Loading" : loadError ? "Unavailable" : `${filteredContacts.length} matching / ${contacts.length} ${showArchived ? "archived" : "contacts"}`}</span>
               </div>
               <p className="mt-1 text-sm text-slate-600">People stay connected to your business, even when an opportunity is won or lost.</p>
             </div>
             <div className="relative mt-4 flex flex-wrap gap-2 sm:mt-0">
               <input ref={fileInputRef} className="hidden" type="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importFile} />
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-blue-200 bg-white px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"><MdFileUpload />{importing ? "Importing..." : "Import"}</button>
-              <button type="button" onClick={() => exportContacts("csv")} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 hover:bg-amber-100"><MdFileDownload />CSV</button>
-              <button type="button" onClick={() => exportContacts("xlsx")} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 text-sm font-semibold text-violet-800 hover:bg-violet-100"><MdFileDownload />Excel</button>
-              {!showArchived && <button type="button" onClick={() => startEditing(null)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700"><MdPersonAddAlt1 />Add contact</button>}
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing || loading || Boolean(loadError)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-blue-200 bg-white px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"><MdFileUpload />{importing ? "Importing..." : "Import contacts"}</button>
+              <button type="button" onClick={() => exportContacts("csv")} disabled={loading || Boolean(loadError) || !filteredContacts.length} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"><MdFileDownload />Export CSV</button>
+              <button type="button" onClick={() => exportContacts("xlsx")} disabled={loading || Boolean(loadError) || !filteredContacts.length} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 text-sm font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"><MdFileDownload />Export Excel</button>
+              {!showArchived && <button type="button" onClick={() => startEditing(null)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2"><MdPersonAddAlt1 />Add contact</button>}
             </div>
           </section>
+
+          {loadError && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert"><span>{loadError}</span><button type="button" onClick={retryLoad} disabled={loading} className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 font-semibold hover:bg-rose-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">{loading ? "Retrying..." : "Retry"}</button></div>}
+          {relatedDataError && !loadError && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert"><span>{relatedDataError} Some contact actions may be unavailable.</span><button type="button" onClick={retryLoad} disabled={loading} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold hover:bg-amber-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">{loading ? "Retrying..." : "Retry"}</button></div>}
 
           {(error || notice) && (
             <div className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-100 bg-rose-50 text-rose-700" : "border-emerald-100 bg-emerald-50 text-emerald-800"}`} role={error ? "alert" : "status"}>
@@ -497,24 +545,39 @@ const Contacts = () => {
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div><h2 className="text-sm font-bold text-slate-900">{showArchived ? "Archived contacts" : "All contacts"}</h2><p className="mt-0.5 text-xs text-slate-500">Search by name, phone, or email. Filter by company, owner, and tags.</p></div>
-                <button type="button" onClick={() => { setLoading(true); setShowArchived((value) => !value); setCompanyFilter(""); setOwnerFilter(""); setTagFilter(""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">{showArchived ? <MdUnarchive /> : <MdArchive />}{showArchived ? "Active contacts" : "View archived"}</button>
+                <div><h2 className="text-sm font-bold text-slate-900">{showArchived ? "Archived contacts" : "All contacts"}</h2><p className="mt-0.5 text-xs text-slate-600">{loading ? "Loading contacts..." : loadError ? "Contact counts unavailable." : `Showing ${filteredContacts.length} matching of ${contacts.length} contacts.`}</p></div>
+                <button type="button" onClick={() => { setLoading(true); setLoadError(""); setShowArchived((value) => !value); setCompanyFilter(""); setOwnerFilter(""); setTagFilter(""); setSearchTerm(""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">{showArchived ? <MdUnarchive /> : <MdArchive />}{showArchived ? "Active contacts" : "View archived"}</button>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_repeat(3,minmax(130px,190px))]">
+              {contacts.length > 0 && <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_repeat(3,minmax(130px,190px))]">
                 <label className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-400 focus-within:border-blue-400 focus-within:bg-white">
-                  <MdSearch size={18} /><input className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search name, phone, email" aria-label="Search contacts" />
+                  <MdSearch size={18} /><input className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-500" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search name, phone, email" aria-label="Search contacts" />
                 </label>
-                <select className={inputBase} value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} aria-label="Filter by company"><option value="">All companies</option>{companies.map((company) => <option key={company}>{company}</option>)}</select>
-                <select className={inputBase} value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Filter by owner"><option value="">All owners</option>{owners.map((owner) => <option key={owner._id} value={owner._id}>{owner.username || owner.email || "Owner"}</option>)}</select>
-                <select className={inputBase} value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} aria-label="Filter by tag"><option value="">All tags</option>{availableTags.map((tag) => <option key={tag}>{tag}</option>)}</select>
-              </div>
+                {companies.length > 0 && <select className={inputBase} value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} aria-label="Filter by company"><option value="">All companies</option>{companies.map((company) => <option key={company} value={company}>{company}</option>)}</select>}
+                {owners.length > 0 && <select className={inputBase} value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Filter by owner"><option value="">All owners</option>{owners.map((owner) => <option key={owner._id} value={owner._id}>{owner.username || owner.email || "Owner"}</option>)}</select>}
+                {availableTags.length > 0 && <select className={inputBase} value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} aria-label="Filter by tag"><option value="">All tags</option>{availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select>}
+                {hasActiveFilters && <button type="button" onClick={clearFilters} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">Clear filters</button>}
+                <p className="self-center text-xs text-slate-600">Exports include these matching contacts from the {showArchived ? "archived" : "active"} view.</p>
+              </div>}
             </div>
-            {loading ? <p className="px-5 py-14 text-center text-sm text-slate-500">Loading contacts...</p>
+            {loading ? <p className="px-5 py-14 text-center text-sm text-slate-600" role="status">Loading contacts...</p>
+              : loadError ? null
+                : contacts.length === 0 ? (
+                  <div className="px-5 py-12 text-center">
+                    <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-blue-600"><MdPersonAddAlt1 size={22} /></span>
+                    <h3 className="mt-3 text-sm font-bold text-slate-900">{showArchived ? "No archived contacts" : "No contacts yet"}</h3>
+                    <p className="mx-auto mt-1 max-w-sm text-sm text-slate-600">{showArchived ? "Archived contacts appear here and can be restored." : "Add a contact or import your existing CSV or Excel directory."}</p>
+                    {!showArchived && <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      <button type="button" onClick={() => startEditing(null)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"><MdPersonAddAlt1 />Add contact</button>
+                      <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"><MdFileUpload />Import contacts</button>
+                    </div>}
+                  </div>
+                )
               : filteredContacts.length === 0 ? (
                 <div className="px-5 py-16 text-center">
                   <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-blue-600"><MdPersonAddAlt1 size={22} /></span>
-                  <h3 className="mt-3 text-sm font-bold text-slate-800">{showArchived ? "No archived contacts" : "No contacts yet"}</h3>
-                  <p className="mx-auto mt-1 max-w-sm text-xs text-slate-500">{showArchived ? "Archived contacts appear here and can be restored." : "Add a contact or import your existing CSV/Excel directory."}</p>
+                  <h3 className="mt-3 text-sm font-bold text-slate-900">No matching contacts</h3>
+                  <p className="mx-auto mt-1 max-w-sm text-sm text-slate-600">Try another search or clear the selected filters.</p>
+                  <button type="button" onClick={clearFilters} className="mt-4 min-h-10 rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-800 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">Clear filters</button>
                 </div>
               ) : (
                 <div className="overflow-x-auto">

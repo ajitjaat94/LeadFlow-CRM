@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import LeadStructure from "../components/LeadStructure";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { cancelFollowUp, completeFollowUp, createLead, getLead, getLeadFollowUps, updateLead } from "../services/api";
 import { getLeadFields } from "../services/api";
 import FollowUpCard from "../components/follow-ups/FollowUpCard";
@@ -17,9 +17,21 @@ const emptyLead = {
   notes: "",
 };
 
+const getCalendarReturnTo = (value) => {
+  const match = typeof value === "string" && /^\/calendar(?:\?date=(\d{4}-\d{2}-\d{2}))?$/.exec(value);
+  if (!match) return "";
+  if (!match[1]) return value;
+  const [year, month, day] = match[1].split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+    ? value
+    : "";
+};
+
 const LeadForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
   const [customFields, setCustomFields] = useState([]);
   const [formData, setFormData] = useState({ ...emptyLead, customFields: {} });
@@ -67,7 +79,10 @@ const LeadForm = () => {
     setError("");
     const saveRequest = id ? updateLead(id, formData) : createLead(formData);
     saveRequest
-      .then((savedLead) => navigate("/leads", { state: { savedLead } }))
+      .then((savedLead) => {
+        const calendarReturnTo = id ? "" : getCalendarReturnTo(location.state?.returnTo);
+        navigate(calendarReturnTo || "/leads", { state: { savedLead } });
+      })
       .catch(() => setError("Unable to save this lead. Please check your details and try again."))
       .finally(() => setLoading(false));
   };

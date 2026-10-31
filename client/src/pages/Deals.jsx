@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  MdAdd,
-  MdAttachMoney,
+  MdAccountBalanceWallet,
   MdCalendarToday,
   MdDeleteOutline,
   MdEdit,
@@ -30,7 +29,12 @@ const emptyDeal = {
   notes: "",
 };
 
-const dateInputValue = (value) => value ? new Date(value).toISOString().slice(0, 10) : "";
+const dateInputValue = (value) => {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+};
 
 const formatMoney = (value, currency) => new Intl.NumberFormat(undefined, {
   style: "currency",
@@ -60,10 +64,11 @@ const dealPayload = (item) => ({
   notes: item.notes || "",
 });
 
-const DealForm = ({ deal, contacts, leads, saving, error, onClose, onSave }) => {
+const DealForm = ({ deal, contacts, leads, relatedDataError, saving, error, onClose, onSave, onRetryRelatedData }) => {
   const [form, setForm] = useState(() => {
     const initial = deal ? { ...emptyDeal, ...dealPayload(deal) } : emptyDeal;
-    return { ...initial, value: String(initial.value ?? 0), probability: String(initial.probability ?? 10) };
+    const probability = ["Won", "Lost"].includes(initial.stage) ? probabilities[initial.stage] : initial.probability;
+    return { ...initial, value: String(initial.value ?? 0), probability: String(probability ?? 10) };
   });
 
   const change = (event) => {
@@ -76,7 +81,11 @@ const DealForm = ({ deal, contacts, leads, saving, error, onClose, onSave }) => 
   };
   const submit = (event) => {
     event.preventDefault();
-    onSave({ ...form, value: Number(form.value), probability: Number(form.probability) });
+    onSave({
+      ...form,
+      value: Number(form.value),
+      probability: ["Won", "Lost"].includes(form.stage) ? probabilities[form.stage] : Number(form.probability),
+    });
   };
 
   const inputClass = "mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -93,17 +102,20 @@ const DealForm = ({ deal, contacts, leads, saving, error, onClose, onSave }) => 
             <input className={inputClass} name="name" value={form.name} onChange={change} maxLength={160} placeholder="e.g. Annual software renewal" required />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-xs font-semibold text-slate-600">Deal value
+            <div>
+              <label htmlFor="deal-value" className="block text-xs font-semibold text-slate-600">Deal value</label>
               <div className="mt-1.5 flex gap-2">
-                <select className={`${inputClass} mt-0 w-24 flex-none`} name="currency" value={form.currency} onChange={change} aria-label="Deal currency">{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select>
-                <input className={`${inputClass} mt-0 min-w-0`} name="value" value={form.value} onChange={change} type="number" min="0" step="0.01" required />
+                <label className="sr-only" htmlFor="deal-currency">Deal currency</label>
+                <select id="deal-currency" className={`${inputClass} mt-0 w-24 flex-none`} name="currency" value={form.currency} onChange={change}>{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select>
+                <input id="deal-value" className={`${inputClass} mt-0 min-w-0`} name="value" value={form.value} onChange={change} type="number" min="0" step="0.01" required />
               </div>
-            </label>
+            </div>
             <label className="text-xs font-semibold text-slate-600">Pipeline stage
               <select className={inputClass} name="stage" value={form.stage} onChange={change}>{stages.map((stage) => <option key={stage}>{stage}</option>)}</select>
             </label>
             <label className="text-xs font-semibold text-slate-600">Win probability (%)
-              <input className={inputClass} name="probability" value={form.probability} onChange={change} type="number" min="0" max="100" step="1" required />
+              <input className={inputClass} name="probability" value={form.probability} onChange={change} type="number" min="0" max="100" step="1" required disabled={["Won", "Lost"].includes(form.stage)} aria-describedby="deal-probability-help" />
+              <span id="deal-probability-help" className="mt-1 block font-normal text-slate-500">{form.stage === "Won" ? "Won deals always use 100%." : form.stage === "Lost" ? "Lost deals always use 0%." : "Enter a whole number from 0 to 100."}</span>
             </label>
             <label className="text-xs font-semibold text-slate-600">Expected close date
               <input className={inputClass} name="expectedCloseDate" value={form.expectedCloseDate} onChange={change} type="date" />
@@ -121,6 +133,7 @@ const DealForm = ({ deal, contacts, leads, saving, error, onClose, onSave }) => 
               </select>
             </label>
           </div>
+          {relatedDataError && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status"><span>{relatedDataError}</span><button type="button" onClick={onRetryRelatedData} className="font-bold underline underline-offset-2">Retry</button></div>}
           <label className="block text-xs font-semibold text-slate-600">Notes
             <textarea className={`${inputClass} resize-y`} name="notes" value={form.notes} onChange={change} rows="3" maxLength={10000} placeholder="Deal context, next steps, and key requirements" />
           </label>
@@ -155,6 +168,9 @@ const Deals = () => {
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [relatedDataError, setRelatedDataError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
   const [formError, setFormError] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -162,21 +178,23 @@ const Deals = () => {
 
   useEffect(() => {
     let active = true;
-    Promise.all([getDeals(), getContacts(), getLeads()])
-      .then(([dealData, contactData, leadData]) => {
+    Promise.allSettled([getDeals(), getContacts(), getLeads()])
+      .then(([dealResult, contactResult, leadResult]) => {
         if (!active) return;
-        setDeals(dealData);
-        setContacts(contactData);
-        setLeads(leadData);
-      })
-      .catch((requestError) => {
-        if (active && requestError.response?.status !== 401) {
-          setError(requestError.response?.data?.message || "Unable to load deals. Check the API connection and try again.");
+        if (dealResult.status === "rejected") {
+          setLoadError(dealResult.reason.response?.data?.message || "Unable to load deals. Check your connection and retry.");
+          return;
+        }
+        setDeals(dealResult.value);
+        setContacts(contactResult.status === "fulfilled" ? contactResult.value : []);
+        setLeads(leadResult.status === "fulfilled" ? leadResult.value : []);
+        if (contactResult.status === "rejected" || leadResult.status === "rejected") {
+          setRelatedDataError("Some linked contact or lead options could not be loaded. Retry to load them.");
         }
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [retryCount]);
 
   const currencyOptions = useMemo(() => [...new Set(deals.map((item) => item.currency || "INR"))].sort(), [deals]);
   const filteredDeals = useMemo(() => {
@@ -240,7 +258,7 @@ const Deals = () => {
       setDeals((current) => current.map((entry) => entry._id === updated._id ? updated : entry));
     } catch (requestError) {
       setDeals((current) => current.map((entry) => entry._id === previous._id ? previous : entry));
-      setError(requestError.response?.data?.message || "Unable to save the stage change.");
+      setError(requestError.response?.data?.message || "Unable to save the stage change. The deal remains in its previous stage.");
     }
   };
 
@@ -258,6 +276,19 @@ const Deals = () => {
   const startEditing = (item = null) => {
     setFormError("");
     setEditing(item || { ...emptyDeal, value: 0, probability: 10 });
+  };
+  const retryLoad = () => {
+    setLoading(true);
+    setLoadError("");
+    setRelatedDataError("");
+    setRetryCount((count) => count + 1);
+  };
+  const changeViewByKeyboard = (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextView = event.key === "Home" || event.key === "ArrowLeft" ? "board" : "list";
+    setView(nextView);
+    document.getElementById(`deals-view-${nextView}`)?.focus();
   };
 
   const inputClass = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
@@ -289,7 +320,7 @@ const Deals = () => {
   );
 
   return (
-    <div className={`crm-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
+    <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
       <DashboardSidebar isOpen={sidebarOpen} onClose={() => { if (window.innerWidth <= 760) setSidebarOpen(false); }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
         <DashboardTopbar searchTerm={search} onSearchChange={setSearch} onAddLead={() => startEditing()} addButtonLabel="Add deal" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
@@ -298,28 +329,30 @@ const Deals = () => {
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-violet-500" />
             <div className="relative">
               <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Workspace / revenue</p>
-              <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight text-slate-900">Deals</h1><span className="rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-bold text-blue-700">{filteredDeals.length} deals</span></div>
+              <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight text-slate-900">Deals</h1><span className="rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-bold text-blue-700">{loading ? "Loading" : loadError ? "Unavailable" : `${filteredDeals.length} deals`}</span></div>
               <p className="mt-1 text-sm text-slate-600">Manage opportunities, forecast revenue, and move deals through your pipeline.</p>
             </div>
-            <button type="button" onClick={() => startEditing()} className="relative mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm hover:bg-blue-700 sm:mt-0"><MdAdd size={18} />Create deal</button>
           </section>
 
           {(error || notice) && <div className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-100 bg-rose-50 text-rose-700" : "border-emerald-100 bg-emerald-50 text-emerald-800"}`} role={error ? "alert" : "status"}><span>{error || notice}</span><button type="button" className="font-bold" onClick={() => { setError(""); setNotice(""); }} aria-label="Dismiss message">&times;</button></div>}
 
-          <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-            <MetricCard label="Open pipeline" value={groupedMoney(openDeals, (item) => Number(item.value) || 0)} detail={`${openDeals.length} active deal(s)`} icon={MdAttachMoney} tone="bg-blue-50 text-blue-700" />
-            <MetricCard label="Weighted forecast" value={groupedMoney(openDeals, (item) => (Number(item.value) || 0) * (Number(item.probability) || 0) / 100)} detail="Value adjusted by win probability" icon={MdShowChart} tone="bg-violet-50 text-violet-700" />
-            <MetricCard label="Won revenue" value={groupedMoney(wonDeals, (item) => Number(item.value) || 0)} detail={`${wonDeals.length} won deal(s)`} icon={MdAttachMoney} tone="bg-emerald-50 text-emerald-700" />
-            <MetricCard label="Close dates" value={`${closeThisMonth} this month`} detail={`${overdueDeals} overdue open deal(s)`} icon={MdCalendarToday} tone="bg-amber-50 text-amber-700" />
+          {loading ? <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-600" role="status">Loading deal metrics...</p>
+            : loadError ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-center text-sm text-rose-800" role="status">Deal metrics are unavailable until deals load.</p>
+              : <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard label="Open pipeline" value={groupedMoney(openDeals, (item) => Number(item.value) || 0)} detail={`${openDeals.length} current open deal(s) · all-time, ignores filters`} icon={MdAccountBalanceWallet} tone="bg-blue-50 text-blue-700" />
+            <MetricCard label="Weighted forecast" value={groupedMoney(openDeals, (item) => (Number(item.value) || 0) * (Number(item.probability) || 0) / 100)} detail="Current open deals · all-time, ignores filters" icon={MdShowChart} tone="bg-violet-50 text-violet-700" />
+            <MetricCard label="Won revenue" value={groupedMoney(wonDeals, (item) => Number(item.value) || 0)} detail={`${wonDeals.length} all-time won deal(s) · ignores filters`} icon={MdAccountBalanceWallet} tone="bg-emerald-50 text-emerald-700" />
+            <MetricCard label="Close dates" value={`${closeThisMonth} this month`} detail={`${overdueDeals} overdue open deal(s) · ignores filters`} icon={MdCalendarToday} tone="bg-amber-50 text-amber-700" />
           </section>
+          }
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div><h2 className="text-sm font-bold text-slate-900">Pipeline</h2><p className="mt-0.5 text-xs text-slate-500">Search, filter, and update deal stages. Stage changes save immediately.</p></div>
-                <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Pipeline view">
-                  <button type="button" onClick={() => setView("board")} className={`grid h-8 w-9 place-items-center rounded-lg ${view === "board" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`} aria-label="Board view" aria-pressed={view === "board"}><MdViewKanban size={18} /></button>
-                  <button type="button" onClick={() => setView("list")} className={`grid h-8 w-9 place-items-center rounded-lg ${view === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`} aria-label="List view" aria-pressed={view === "list"}><MdViewList size={18} /></button>
+                <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Pipeline view" onKeyDown={changeViewByKeyboard}>
+                  <button id="deals-view-board" type="button" role="tab" aria-controls="deals-view-panel" aria-selected={view === "board"} tabIndex={view === "board" ? 0 : -1} onClick={() => setView("board")} className={`flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${view === "board" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}><MdViewKanban size={18} />Board</button>
+                  <button id="deals-view-list" type="button" role="tab" aria-controls="deals-view-panel" aria-selected={view === "list"} tabIndex={view === "list" ? 0 : -1} onClick={() => setView("list")} className={`flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${view === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}><MdViewList size={18} />List</button>
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_repeat(2,minmax(150px,210px))]">
@@ -328,16 +361,17 @@ const Deals = () => {
                 <select className={`${inputClass} min-h-10`} value={currencyFilter} onChange={(event) => setCurrencyFilter(event.target.value)} aria-label="Filter by currency"><option>All currencies</option>{currencyOptions.map((currency) => <option key={currency}>{currency}</option>)}</select>
               </div>
             </div>
-            {loading ? <p className="px-5 py-14 text-center text-sm text-slate-500">Loading deals...</p>
-              : filteredDeals.length === 0 ? <div className="px-5 py-16 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-blue-600"><MdShowChart size={22} /></span><h3 className="mt-3 text-sm font-bold text-slate-800">{deals.length ? "No matching deals" : "Your pipeline is ready"}</h3><p className="mx-auto mt-1 max-w-sm text-xs text-slate-500">{deals.length ? "Try changing the search or filters." : "Create your first deal to start tracking pipeline value and expected revenue."}</p>{!deals.length && <button type="button" onClick={() => startEditing()} className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Create your first deal</button>}</div>
-                : view === "board" ? <div className="grid items-start gap-3 p-3 sm:p-4 md:grid-cols-2 2xl:grid-cols-3">{stages.filter((stage) => stageFilter === "All stages" || stageFilter === stage).map((stage) => {
+            {loading ? <div id="deals-view-panel" role="tabpanel" aria-labelledby={`deals-view-${view}`} tabIndex={0} className="px-5 py-14 text-center text-sm text-slate-600"><p role="status">Loading deals...</p></div>
+              : loadError ? <div id="deals-view-panel" role="tabpanel" aria-labelledby={`deals-view-${view}`} tabIndex={0} className="px-5 py-12 text-center"><div role="alert"><h3 className="text-sm font-bold text-rose-800">Deals couldn’t be loaded</h3><p className="mt-1 text-xs text-rose-700">{loadError}</p><button type="button" onClick={retryLoad} className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Retry</button></div></div>
+              : filteredDeals.length === 0 ? <div id="deals-view-panel" role="tabpanel" aria-labelledby={`deals-view-${view}`} tabIndex={0} className="px-5 py-16 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-blue-600"><MdShowChart size={22} /></span><h3 className="mt-3 text-sm font-bold text-slate-800">{deals.length ? "No matching deals" : "Your pipeline is ready"}</h3><p className="mx-auto mt-1 max-w-sm text-xs text-slate-500">{deals.length ? "Try changing the search or filters." : "Add your first deal to start tracking pipeline value and expected revenue."}</p>{!deals.length && <button type="button" onClick={() => startEditing()} className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Add your first deal</button>}</div>
+                : view === "board" ? <div id="deals-view-panel" role="tabpanel" aria-labelledby="deals-view-board" tabIndex={0} className="grid items-start gap-3 p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 sm:p-4 md:grid-cols-2 2xl:grid-cols-3">{stages.filter((stage) => stageFilter === "All stages" || stageFilter === stage).map((stage) => {
                   const stageDeals = filteredDeals.filter((item) => item.stage === stage);
                   return <section key={stage} className="min-h-40 rounded-xl bg-slate-50/80 p-2.5">
                     <div className="mb-2 flex items-center justify-between gap-2 px-1 py-1"><div className="flex items-center gap-2"><h3 className="text-xs font-bold text-slate-800">{stage}</h3><span className="grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-slate-500">{stageDeals.length}</span></div><span className="text-[10px] font-semibold text-slate-500">{groupedMoney(stageDeals, (item) => Number(item.value) || 0)}</span></div>
                     <div className="space-y-2">{stageDeals.length ? stageDeals.map(renderCard) : <p className="rounded-lg border border-dashed border-slate-200 bg-white/60 px-3 py-5 text-center text-[11px] text-slate-400">No deals in this stage</p>}</div>
                   </section>;
                 })}</div>
-                  : <div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse text-left">
+                  : <div id="deals-view-panel" role="tabpanel" aria-labelledby="deals-view-list" tabIndex={0} className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400"><table className="w-full min-w-[900px] border-collapse text-left">
                     <thead className="bg-slate-50"><tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wide text-slate-500"><th className="px-5 py-3">Deal</th><th className="px-4 py-3">Contact / lead</th><th className="px-4 py-3">Value</th><th className="px-4 py-3">Stage</th><th className="px-4 py-3">Probability</th><th className="px-4 py-3">Expected close</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
                     <tbody className="divide-y divide-slate-100">{filteredDeals.map((item) => <tr key={item._id} className="transition hover:bg-blue-50/30">
                       <td className="px-5 py-3"><button type="button" onClick={() => startEditing(item)} className="text-left text-sm font-bold text-slate-900 hover:text-blue-700">{item.name}</button>{item.notes && <p className="mt-0.5 max-w-48 truncate text-[11px] text-slate-500">{item.notes}</p>}</td>
@@ -351,7 +385,7 @@ const Deals = () => {
           </section>
         </div>
       </main>
-      {editing && <DealForm key={editing._id || "new-deal"} deal={editing._id ? editing : null} contacts={contacts} leads={leads} saving={saving} error={formError} onClose={() => { setEditing(null); setFormError(""); }} onSave={save} />}
+      {editing && <DealForm key={editing._id || "new-deal"} deal={editing._id ? editing : null} contacts={contacts} leads={leads} relatedDataError={relatedDataError} saving={saving} error={formError} onClose={() => { setEditing(null); setFormError(""); }} onSave={save} onRetryRelatedData={retryLoad} />}
     </div>
   );
 };

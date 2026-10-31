@@ -174,7 +174,7 @@ const LeadTable = ({ leads = [], customFields = [], onView, onFollowUp, onEdit, 
               <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Lead</th>
               <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Company</th>
               <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Contact</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Details</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Notes &amp; custom fields</th>
               <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
               <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
             </tr>
@@ -187,13 +187,13 @@ const LeadTable = ({ leads = [], customFields = [], onView, onFollowUp, onEdit, 
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700">
                       {lead.name?.slice(0, 1).toUpperCase() || "L"}
                     </span>
-                    <span className="max-w-[200px] truncate text-sm font-semibold text-slate-900">{lead.name || "Unnamed lead"}</span>
+                    <span title={lead.name || "Unnamed lead"} className="max-w-[200px] truncate text-sm font-semibold text-slate-900">{lead.name || "Unnamed lead"}</span>
                   </div>
                 </td>
-                <td className="max-w-[190px] px-4 py-4 text-sm text-slate-600"><span className="block truncate">{lead.company || "-"}</span></td>
+                <td className="max-w-[190px] px-4 py-4 text-sm text-slate-700"><span title={lead.company || ""} className="block truncate">{lead.company || "-"}</span></td>
                 <td className="max-w-[230px] px-4 py-4">
-                  <span className="block truncate text-sm text-slate-700">{lead.email || "-"}</span>
-                  <span className="mt-1 block text-xs text-slate-400">{lead.phone || "No phone"}</span>
+                  <span title={lead.email || ""} className="block truncate text-sm text-slate-700">{lead.email || "-"}</span>
+                  <span title={lead.phone || ""} className="mt-1 block truncate text-xs text-slate-600">{lead.phone || "No phone"}</span>
                 </td>
                 <td className="px-4 py-4">
                   <details className="group max-w-[210px]">
@@ -235,8 +235,8 @@ const LeadTable = ({ leads = [], customFields = [], onView, onFollowUp, onEdit, 
             </div>
 
             <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-              <p className="truncate text-slate-600" title={lead.email}>{lead.email || "No email"}</p>
-              <p className="text-slate-600">{lead.phone || "No phone"}</p>
+              <p className="truncate text-slate-700" title={lead.email}>{lead.email || "No email"}</p>
+              <p className="text-slate-700">{lead.phone || "No phone"}</p>
             </div>
 
             {(lead.notes || customFields.length > 0) && (

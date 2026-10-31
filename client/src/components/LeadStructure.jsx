@@ -1,11 +1,27 @@
+import { useState } from "react";
 import Input from "./ui/Input";
 import Button from "./ui/Button";
+import AddFieldModal from "./AddFieldModal";
+import CustomFieldInput from "./CustomFieldInput";
+import { createLeadField } from "../services/api";
 
-const LeadStructure = ({ formData, handleChange, handleSubmit, loading }) => {
+const LeadStructure = ({ formData, handleChange, loading, customFields = [], onCustomFieldsChange, onCustomFieldValuesChange }) => {
+  const [addFieldOpen, setAddFieldOpen] = useState(false);
+
+  const handleAddField = async (field) => {
+    const savedField = await createLeadField(field);
+    onCustomFieldsChange?.([...customFields, savedField]);
+    setAddFieldOpen(false);
+  };
+
+  const handleCustomFieldChange = (key, value) => {
+    onCustomFieldValuesChange?.({ ...formData.customFields, [key]: value });
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
+    <div className="lead-form-layout">
+      <div className="lead-form-grid">
+        <div className="lead-form-field">
           <label className="mb-2 block text-sm font-semibold text-slate-700">Name</label>
           <Input
             type="text"
@@ -18,7 +34,7 @@ const LeadStructure = ({ formData, handleChange, handleSubmit, loading }) => {
           />
         </div>
 
-        <div>
+        <div className="lead-form-field">
           <label className="mb-2 block text-sm font-semibold text-slate-700">Company</label>
           <Input
             type="text"
@@ -32,8 +48,8 @@ const LeadStructure = ({ formData, handleChange, handleSubmit, loading }) => {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
+      <div className="lead-form-grid">
+        <div className="lead-form-field">
           <label className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
           <input
             type="email"
@@ -46,7 +62,7 @@ const LeadStructure = ({ formData, handleChange, handleSubmit, loading }) => {
           />
         </div>
 
-        <div>
+        <div className="lead-form-field">
           <label className="mb-2 block text-sm font-semibold text-slate-700">Phone</label>
           <Input
             type="text"
@@ -59,8 +75,8 @@ const LeadStructure = ({ formData, handleChange, handleSubmit, loading }) => {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
+      <div className="lead-form-grid">
+        <div className="lead-form-field">
           <label className="mb-2 block text-sm font-semibold text-slate-700">Status</label>
           <select
             name="status"
@@ -71,11 +87,14 @@ const LeadStructure = ({ formData, handleChange, handleSubmit, loading }) => {
             <option value="New">New</option>
             <option value="Contacted">Contacted</option>
             <option value="Qualified">Qualified</option>
+            <option value="Proposal">Proposal</option>
+            <option value="Negotiation">Negotiation</option>
+            <option value="Won">Won</option>
             <option value="Lost">Lost</option>
           </select>
         </div>
 
-        <div>
+        <div className="lead-form-field">
           <label className="mb-2 block text-sm font-semibold text-slate-700">Notes</label>
           <textarea
             name="notes"
@@ -88,15 +107,36 @@ const LeadStructure = ({ formData, handleChange, handleSubmit, loading }) => {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {customFields.length > 0 && (
+        <div className="lead-custom-fields">
+          <div className="lead-custom-fields-heading">
+            <div><p>Custom fields</p><span>Workspace-specific details for this lead</span></div>
+          </div>
+          <div className="lead-form-grid">
+          {customFields.map((field) => (
+            <div className="lead-form-field" key={field.id || field._id}>
+              {field.type !== "checkbox" && <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor={`custom-${field.key}`}>{field.name}</label>}
+              <CustomFieldInput field={field} value={formData.customFields?.[field.key]} onChange={handleCustomFieldChange} />
+            </div>
+          ))}
+          </div>
+        </div>
+      )}
+
+      <div className="lead-form-add-field">
+        <button type="button" onClick={() => setAddFieldOpen(true)} className="lead-add-field-button">+ Add Field</button>
+        <span>Add details specific to your workspace when needed.</span>
+      </div>
+
+      <div className="lead-form-actions">
         <Button
           text={loading ? "Saving..." : "Save Lead"}
           className="w-full bg-purple-600 text-white hover:bg-purple-700 sm:w-auto"
           disabled={loading}
-          onClick={handleSubmit}
         />
-        <p className="text-sm text-slate-500">Your data will be saved to your account.</p>
+        <p>Your data will be saved to your account.</p>
       </div>
+      {addFieldOpen && <AddFieldModal existingFields={customFields} onClose={() => setAddFieldOpen(false)} onAdd={handleAddField} />}
     </div>
   );
 };

@@ -1,0 +1,359 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  MdAdd,
+  MdAttachMoney,
+  MdCalendarToday,
+  MdDeleteOutline,
+  MdEdit,
+  MdFilterList,
+  MdSearch,
+  MdShowChart,
+  MdViewKanban,
+  MdViewList,
+} from "react-icons/md";
+import DashboardSidebar from "../components/dashboard/DashboardSidebar";
+import DashboardTopbar from "../components/dashboard/DashboardTopbar";
+import { createDeal, deleteDeal, getContacts, getDeals, getLeads, updateDeal } from "../services/api";
+
+const stages = ["Prospecting", "Qualification", "Proposal", "Negotiation", "Won", "Lost"];
+const probabilities = { Prospecting: 10, Qualification: 25, Proposal: 50, Negotiation: 75, Won: 100, Lost: 0 };
+const currencies = ["INR", "USD", "EUR", "GBP"];
+const emptyDeal = {
+  name: "",
+  value: "0",
+  currency: "INR",
+  stage: "Prospecting",
+  probability: "10",
+  expectedCloseDate: "",
+  contactId: "",
+  leadId: "",
+  notes: "",
+};
+
+const dateInputValue = (value) => value ? new Date(value).toISOString().slice(0, 10) : "";
+
+const formatMoney = (value, currency) => new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency,
+  maximumFractionDigits: 0,
+}).format(Number(value) || 0);
+
+const groupedMoney = (items, selector) => {
+  const totals = new Map();
+  items.forEach((item) => {
+    const currency = item.currency || "INR";
+    totals.set(currency, (totals.get(currency) || 0) + selector(item));
+  });
+  if (!totals.size) return formatMoney(0, "INR");
+  return [...totals.entries()].map(([currency, value]) => formatMoney(value, currency)).join(" · ");
+};
+
+const dealPayload = (item) => ({
+  name: item.name,
+  value: item.value,
+  currency: item.currency || "INR",
+  stage: item.stage,
+  probability: item.probability,
+  expectedCloseDate: dateInputValue(item.expectedCloseDate),
+  contactId: item.contact?._id || item.contact || "",
+  leadId: item.lead?._id || item.lead || "",
+  notes: item.notes || "",
+});
+
+const DealForm = ({ deal, contacts, leads, saving, error, onClose, onSave }) => {
+  const [form, setForm] = useState(() => {
+    const initial = deal ? { ...emptyDeal, ...dealPayload(deal) } : emptyDeal;
+    return { ...initial, value: String(initial.value ?? 0), probability: String(initial.probability ?? 10) };
+  });
+
+  const change = (event) => {
+    const { name, value } = event.target;
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+      ...(name === "stage" ? { probability: String(probabilities[value]) } : {}),
+    }));
+  };
+  const submit = (event) => {
+    event.preventDefault();
+    onSave({ ...form, value: Number(form.value), probability: Number(form.probability) });
+  };
+
+  const inputClass = "mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/45 p-3 sm:p-5" role="presentation" onMouseDown={onClose}>
+      <section className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="deal-form-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4 sm:px-6">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">Sales pipeline</p>
+          <h2 id="deal-form-title" className="mt-1 text-xl font-bold text-slate-900">{deal ? "Edit deal" : "Create deal"}</h2>
+        </div>
+        <form onSubmit={submit} className="space-y-4 p-5 sm:p-6">
+          <label className="block text-xs font-semibold text-slate-600">Deal name *
+            <input className={inputClass} name="name" value={form.name} onChange={change} maxLength={160} placeholder="e.g. Annual software renewal" required />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-slate-600">Deal value
+              <div className="mt-1.5 flex gap-2">
+                <select className={`${inputClass} mt-0 w-24 flex-none`} name="currency" value={form.currency} onChange={change} aria-label="Deal currency">{currencies.map((currency) => <option key={currency}>{currency}</option>)}</select>
+                <input className={`${inputClass} mt-0 min-w-0`} name="value" value={form.value} onChange={change} type="number" min="0" step="0.01" required />
+              </div>
+            </label>
+            <label className="text-xs font-semibold text-slate-600">Pipeline stage
+              <select className={inputClass} name="stage" value={form.stage} onChange={change}>{stages.map((stage) => <option key={stage}>{stage}</option>)}</select>
+            </label>
+            <label className="text-xs font-semibold text-slate-600">Win probability (%)
+              <input className={inputClass} name="probability" value={form.probability} onChange={change} type="number" min="0" max="100" step="1" required />
+            </label>
+            <label className="text-xs font-semibold text-slate-600">Expected close date
+              <input className={inputClass} name="expectedCloseDate" value={form.expectedCloseDate} onChange={change} type="date" />
+            </label>
+            <label className="text-xs font-semibold text-slate-600">Linked contact
+              <select className={inputClass} name="contactId" value={form.contactId} onChange={change}>
+                <option value="">No contact linked</option>
+                {contacts.map((contact) => <option key={contact._id} value={contact._id}>{contact.name}{contact.company ? ` · ${contact.company}` : ""}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-slate-600">Related lead
+              <select className={inputClass} name="leadId" value={form.leadId} onChange={change}>
+                <option value="">No lead linked</option>
+                {leads.map((lead) => <option key={lead._id} value={lead._id}>{lead.name}{lead.company ? ` · ${lead.company}` : ""}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="block text-xs font-semibold text-slate-600">Notes
+            <textarea className={`${inputClass} resize-y`} name="notes" value={form.notes} onChange={change} rows="3" maxLength={10000} placeholder="Deal context, next steps, and key requirements" />
+          </label>
+          {error && <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">{error}</p>}
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={saving} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">{saving ? "Saving..." : deal ? "Save changes" : "Create deal"}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+};
+
+const MetricCard = ({ label, value, detail, icon: Icon, tone }) => (
+  <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-2 break-words text-lg font-bold leading-tight text-slate-900 sm:text-xl">{value}</p><p className="mt-1 text-[11px] text-slate-500">{detail}</p></div>
+      <span className={`grid h-10 w-10 flex-none place-items-center rounded-xl ${tone}`}><Icon size={20} /></span>
+    </div>
+  </article>
+);
+
+const Deals = () => {
+  const [deals, setDeals] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [leads, setLeads] = useState([]);
+  const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState("All stages");
+  const [currencyFilter, setCurrencyFilter] = useState("All currencies");
+  const [view, setView] = useState("board");
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [formError, setFormError] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getDeals(), getContacts(), getLeads()])
+      .then(([dealData, contactData, leadData]) => {
+        if (!active) return;
+        setDeals(dealData);
+        setContacts(contactData);
+        setLeads(leadData);
+      })
+      .catch((requestError) => {
+        if (active && requestError.response?.status !== 401) {
+          setError(requestError.response?.data?.message || "Unable to load deals. Check the API connection and try again.");
+        }
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const currencyOptions = useMemo(() => [...new Set(deals.map((item) => item.currency || "INR"))].sort(), [deals]);
+  const filteredDeals = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return deals.filter((item) => {
+      const matchesSearch = !query || [
+        item.name, item.contact?.name, item.contact?.company, item.lead?.name, item.lead?.company, item.stage,
+      ].some((value) => value?.toLowerCase().includes(query));
+      const matchesStage = stageFilter === "All stages" || item.stage === stageFilter;
+      const matchesCurrency = currencyFilter === "All currencies" || item.currency === currencyFilter;
+      return matchesSearch && matchesStage && matchesCurrency;
+    }).sort((a, b) => {
+      const firstDate = a.expectedCloseDate ? new Date(a.expectedCloseDate).getTime() : Number.MAX_SAFE_INTEGER;
+      const secondDate = b.expectedCloseDate ? new Date(b.expectedCloseDate).getTime() : Number.MAX_SAFE_INTEGER;
+      return firstDate - secondDate || new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
+  }, [currencyFilter, deals, search, stageFilter]);
+
+  const openDeals = deals.filter((item) => !["Won", "Lost"].includes(item.stage));
+  const wonDeals = deals.filter((item) => item.stage === "Won");
+  const today = new Date();
+  const closeThisMonth = deals.filter((item) => {
+    if (!item.expectedCloseDate || ["Won", "Lost"].includes(item.stage)) return false;
+    const date = new Date(item.expectedCloseDate);
+    return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
+  }).length;
+  const overdueDeals = openDeals.filter((item) => item.expectedCloseDate && new Date(item.expectedCloseDate) < new Date(new Date().toDateString())).length;
+
+  const save = async (values) => {
+    setSaving(true);
+    setFormError("");
+    try {
+      if (editing?._id) {
+        const updated = await updateDeal(editing._id, values);
+        setDeals((current) => current.map((item) => item._id === updated._id ? updated : item));
+        setNotice("Deal updated.");
+      } else {
+        const created = await createDeal(values);
+        setDeals((current) => [created, ...current]);
+        setNotice("Deal created.");
+      }
+      setEditing(null);
+    } catch (requestError) {
+      setFormError(requestError.response?.data?.message || "Unable to save this deal.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeStage = async (item, stage) => {
+    const previous = item;
+    setDeals((current) => current.map((entry) => entry._id === item._id
+      ? { ...entry, stage, probability: probabilities[stage] }
+      : entry));
+    try {
+      const updated = await updateDeal(item._id, {
+        ...dealPayload(item),
+        stage,
+        probability: probabilities[stage],
+      });
+      setDeals((current) => current.map((entry) => entry._id === updated._id ? updated : entry));
+    } catch (requestError) {
+      setDeals((current) => current.map((entry) => entry._id === previous._id ? previous : entry));
+      setError(requestError.response?.data?.message || "Unable to save the stage change.");
+    }
+  };
+
+  const removeDeal = async (item) => {
+    if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteDeal(item._id);
+      setDeals((current) => current.filter((entry) => entry._id !== item._id));
+      setNotice("Deal deleted.");
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || "Unable to delete this deal.");
+    }
+  };
+
+  const startEditing = (item = null) => {
+    setFormError("");
+    setEditing(item || { ...emptyDeal, value: 0, probability: 10 });
+  };
+
+  const inputClass = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+
+  const renderCard = (item) => (
+    <article key={item._id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-blue-200 hover:shadow-md">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <button type="button" onClick={() => startEditing(item)} className="block max-w-full text-left text-sm font-bold text-slate-900 hover:text-blue-700">{item.name}</button>
+          <p className="mt-1 truncate text-xs text-slate-500">{item.contact?.name || item.lead?.name || "No linked contact"}</p>
+        </div>
+        <div className="flex flex-none">
+          <button type="button" onClick={() => startEditing(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={`Edit ${item.name}`} title="Edit"><MdEdit /></button>
+          <button type="button" onClick={() => removeDeal(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600" aria-label={`Delete ${item.name}`} title="Delete"><MdDeleteOutline /></button>
+        </div>
+      </div>
+      <p className="mt-3 text-base font-bold text-slate-900">{formatMoney(item.value, item.currency || "INR")}</p>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+        <span>{item.expectedCloseDate ? `Close ${dateInputValue(item.expectedCloseDate)}` : "No close date"}</span>
+        <span className="font-semibold text-blue-700">{item.probability}% likely</span>
+      </div>
+      <label className="mt-3 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Move stage
+        <select className={`${inputClass} mt-1 w-full py-1.5 text-xs font-semibold normal-case tracking-normal`} value={item.stage} onChange={(event) => changeStage(item, event.target.value)} aria-label={`Stage for ${item.name}`}>
+          {stages.map((stage) => <option key={stage}>{stage}</option>)}
+        </select>
+      </label>
+      {item.notes && <p className="mt-2 line-clamp-2 text-xs text-slate-500">{item.notes}</p>}
+    </article>
+  );
+
+  return (
+    <div className={`crm-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
+      <DashboardSidebar isOpen={sidebarOpen} onClose={() => { if (window.innerWidth <= 760) setSidebarOpen(false); }} onToggle={() => setSidebarOpen((open) => !open)} />
+      <main className="crm-main">
+        <DashboardTopbar searchTerm={search} onSearchChange={setSearch} onAddLead={() => startEditing()} addButtonLabel="Add deal" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
+        <div className="crm-page space-y-5">
+          <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 shadow-sm sm:flex sm:items-center sm:justify-between sm:p-6">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-violet-500" />
+            <div className="relative">
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Workspace / revenue</p>
+              <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight text-slate-900">Deals</h1><span className="rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-bold text-blue-700">{filteredDeals.length} deals</span></div>
+              <p className="mt-1 text-sm text-slate-600">Manage opportunities, forecast revenue, and move deals through your pipeline.</p>
+            </div>
+            <button type="button" onClick={() => startEditing()} className="relative mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm hover:bg-blue-700 sm:mt-0"><MdAdd size={18} />Create deal</button>
+          </section>
+
+          {(error || notice) && <div className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-100 bg-rose-50 text-rose-700" : "border-emerald-100 bg-emerald-50 text-emerald-800"}`} role={error ? "alert" : "status"}><span>{error || notice}</span><button type="button" className="font-bold" onClick={() => { setError(""); setNotice(""); }} aria-label="Dismiss message">&times;</button></div>}
+
+          <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+            <MetricCard label="Open pipeline" value={groupedMoney(openDeals, (item) => Number(item.value) || 0)} detail={`${openDeals.length} active deal(s)`} icon={MdAttachMoney} tone="bg-blue-50 text-blue-700" />
+            <MetricCard label="Weighted forecast" value={groupedMoney(openDeals, (item) => (Number(item.value) || 0) * (Number(item.probability) || 0) / 100)} detail="Value adjusted by win probability" icon={MdShowChart} tone="bg-violet-50 text-violet-700" />
+            <MetricCard label="Won revenue" value={groupedMoney(wonDeals, (item) => Number(item.value) || 0)} detail={`${wonDeals.length} won deal(s)`} icon={MdAttachMoney} tone="bg-emerald-50 text-emerald-700" />
+            <MetricCard label="Close dates" value={`${closeThisMonth} this month`} detail={`${overdueDeals} overdue open deal(s)`} icon={MdCalendarToday} tone="bg-amber-50 text-amber-700" />
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><h2 className="text-sm font-bold text-slate-900">Pipeline</h2><p className="mt-0.5 text-xs text-slate-500">Search, filter, and update deal stages. Stage changes save immediately.</p></div>
+                <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Pipeline view">
+                  <button type="button" onClick={() => setView("board")} className={`grid h-8 w-9 place-items-center rounded-lg ${view === "board" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`} aria-label="Board view" aria-pressed={view === "board"}><MdViewKanban size={18} /></button>
+                  <button type="button" onClick={() => setView("list")} className={`grid h-8 w-9 place-items-center rounded-lg ${view === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`} aria-label="List view" aria-pressed={view === "list"}><MdViewList size={18} /></button>
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_repeat(2,minmax(150px,210px))]">
+                <label className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-400 focus-within:border-blue-400 focus-within:bg-white"><MdSearch size={18} /><input className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search deals, companies, contacts" aria-label="Search deals" /></label>
+                <label className="flex items-center gap-2"><MdFilterList className="text-slate-400" /><select className={`${inputClass} min-h-10 min-w-0 flex-1`} value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter by stage"><option>All stages</option>{stages.map((stage) => <option key={stage}>{stage}</option>)}</select></label>
+                <select className={`${inputClass} min-h-10`} value={currencyFilter} onChange={(event) => setCurrencyFilter(event.target.value)} aria-label="Filter by currency"><option>All currencies</option>{currencyOptions.map((currency) => <option key={currency}>{currency}</option>)}</select>
+              </div>
+            </div>
+            {loading ? <p className="px-5 py-14 text-center text-sm text-slate-500">Loading deals...</p>
+              : filteredDeals.length === 0 ? <div className="px-5 py-16 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-blue-600"><MdShowChart size={22} /></span><h3 className="mt-3 text-sm font-bold text-slate-800">{deals.length ? "No matching deals" : "Your pipeline is ready"}</h3><p className="mx-auto mt-1 max-w-sm text-xs text-slate-500">{deals.length ? "Try changing the search or filters." : "Create your first deal to start tracking pipeline value and expected revenue."}</p>{!deals.length && <button type="button" onClick={() => startEditing()} className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Create your first deal</button>}</div>
+                : view === "board" ? <div className="grid items-start gap-3 p-3 sm:p-4 md:grid-cols-2 2xl:grid-cols-3">{stages.filter((stage) => stageFilter === "All stages" || stageFilter === stage).map((stage) => {
+                  const stageDeals = filteredDeals.filter((item) => item.stage === stage);
+                  return <section key={stage} className="min-h-40 rounded-xl bg-slate-50/80 p-2.5">
+                    <div className="mb-2 flex items-center justify-between gap-2 px-1 py-1"><div className="flex items-center gap-2"><h3 className="text-xs font-bold text-slate-800">{stage}</h3><span className="grid h-5 min-w-5 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-slate-500">{stageDeals.length}</span></div><span className="text-[10px] font-semibold text-slate-500">{groupedMoney(stageDeals, (item) => Number(item.value) || 0)}</span></div>
+                    <div className="space-y-2">{stageDeals.length ? stageDeals.map(renderCard) : <p className="rounded-lg border border-dashed border-slate-200 bg-white/60 px-3 py-5 text-center text-[11px] text-slate-400">No deals in this stage</p>}</div>
+                  </section>;
+                })}</div>
+                  : <div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse text-left">
+                    <thead className="bg-slate-50"><tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wide text-slate-500"><th className="px-5 py-3">Deal</th><th className="px-4 py-3">Contact / lead</th><th className="px-4 py-3">Value</th><th className="px-4 py-3">Stage</th><th className="px-4 py-3">Probability</th><th className="px-4 py-3">Expected close</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">{filteredDeals.map((item) => <tr key={item._id} className="transition hover:bg-blue-50/30">
+                      <td className="px-5 py-3"><button type="button" onClick={() => startEditing(item)} className="text-left text-sm font-bold text-slate-900 hover:text-blue-700">{item.name}</button>{item.notes && <p className="mt-0.5 max-w-48 truncate text-[11px] text-slate-500">{item.notes}</p>}</td>
+                      <td className="px-4 py-3 text-xs text-slate-600">{item.contact?.name || "—"}{item.lead?.name && <span className="block text-[10px] text-slate-400">Lead: {item.lead.name}</span>}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-slate-800">{formatMoney(item.value, item.currency || "INR")}</td>
+                      <td className="px-4 py-3"><select className={`${inputClass} py-1.5 text-xs`} value={item.stage} onChange={(event) => changeStage(item, event.target.value)} aria-label={`Stage for ${item.name}`}>{stages.map((stage) => <option key={stage}>{stage}</option>)}</select></td>
+                      <td className="px-4 py-3 text-xs text-slate-600">{item.probability}%</td><td className="px-4 py-3 text-xs text-slate-600">{item.expectedCloseDate ? dateInputValue(item.expectedCloseDate) : "—"}</td>
+                      <td className="px-5 py-3"><div className="flex justify-end gap-1"><button type="button" onClick={() => startEditing(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={`Edit ${item.name}`}><MdEdit /></button><button type="button" onClick={() => removeDeal(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600" aria-label={`Delete ${item.name}`}><MdDeleteOutline /></button></div></td>
+                    </tr>)}</tbody>
+                  </table></div>}
+          </section>
+        </div>
+      </main>
+      {editing && <DealForm key={editing._id || "new-deal"} deal={editing._id ? editing : null} contacts={contacts} leads={leads} saving={saving} error={formError} onClose={() => { setEditing(null); setFormError(""); }} onSave={save} />}
+    </div>
+  );
+};
+
+export default Deals;

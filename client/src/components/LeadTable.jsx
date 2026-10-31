@@ -1,14 +1,46 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  MdCheck,
+  MdDeleteOutline,
+  MdEdit,
+  MdEvent,
+  MdKeyboardArrowDown,
+  MdSearch,
+  MdVisibility,
+} from "react-icons/md";
+import { createPortal } from "react-dom";
+
 const statusStyles = {
-  New: "bg-purple-500/10 border-purple-500/25 text-purple-400",
-  Contacted: "bg-blue-500/10   border-blue-500/20   text-blue-400",
-  Qualified: "bg-[#d9ff00]/8   border-[#d9ff00]/20  text-[#d9ff00]",
-  Closed: "bg-green-500/10  border-green-500/20  text-green-400",
-  Lost: "bg-red-500/10    border-red-500/20    text-red-400",
+  New: "border-violet-200 bg-violet-50 text-violet-700",
+  Contacted: "border-blue-200 bg-blue-50 text-blue-700",
+  Qualified: "border-cyan-200 bg-cyan-50 text-cyan-800",
+  Proposal: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  Negotiation: "border-amber-200 bg-amber-50 text-amber-800",
+  Won: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  Lost: "border-rose-200 bg-rose-50 text-rose-700",
+};
+
+const statusOptions = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
+
+const statusDotStyles = {
+  New: "bg-purple-500",
+  Contacted: "bg-blue-500",
+  Qualified: "bg-cyan-500",
+  Proposal: "bg-indigo-500",
+  Negotiation: "bg-amber-500",
+  Won: "bg-emerald-500",
+  Lost: "bg-red-500",
 };
 
 
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status, onChange }) => {
   const style = statusStyles[status] || statusStyles.New;
+
+  if (onChange) {
+    return (
+      <StatusPicker status={status} onChange={onChange} />
+    );
+  }
 
   return (
     <span
@@ -20,76 +52,166 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const LeadTable = ({ leads = [], onView, onEdit, onDelete }) => {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-purple-500/20 bg-white">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
-        <h2 className="text-sm font-extrabold text-black font-mono tracking-tight">
-          Lead<span className="text-purple-400">flow</span> — Leads
-        </h2>
-        <span className="text-[11px] font-mono text-black bg-purple-500/10 border border-purple-500/20 px-3 py-1 rounded-full">
-          {leads.length} leads
-        </span>
-      </div>
+const StatusPicker = ({ status, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const pickerRef = useRef(null);
+  const menuRef = useRef(null);
 
-      {/* ✅ Desktop Table — hidden on mobile */}
-      <div className="hidden md:block overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-white/6">
-              {["Name", "Company", "Email", "Phone", "Status", "Actions"].map(
-                (h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-[10px] font-mono tracking-[0.2em] uppercase text-black font-medium whitespace-nowrap"
-                  >
-                    {h}
-                  </th>
-                ),
-              )}
+  const updateMenuPosition = () => {
+    const button = pickerRef.current?.querySelector("button");
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    setMenuPosition({ top: rect.bottom + 4, left: rect.left });
+  };
+
+  useEffect(() => {
+    const closePicker = (event) => {
+      if (!pickerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closePicker);
+    return () => document.removeEventListener("mousedown", closePicker);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative inline-block" ref={pickerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((isOpen) => !isOpen)}
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold font-mono transition hover:brightness-95 ${statusStyles[status] || statusStyles.New}`}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`Change status, currently ${status}`}
+      >
+        <span className={`h-2 w-2 rounded-full ${statusDotStyles[status] || statusDotStyles.New}`} />
+        {status}
+        <MdKeyboardArrowDown size={15} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && createPortal(
+        <div ref={menuRef} className="fixed z-[100] max-h-64 min-w-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" style={menuPosition} role="listbox">
+          {statusOptions.map((option) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={option === status}
+              key={option}
+              onClick={() => { onChange(option); setOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              <span className={`h-2 w-2 rounded-full ${statusDotStyles[option]}`} />
+              <span className="flex-1">{option}</span>
+              {option === status && <MdCheck size={15} className="text-purple-600" />}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+};
+
+const LeadTable = ({ leads = [], customFields = [], onView, onFollowUp, onEdit, onDelete, onStatusChange }) => {
+  const renderLeadDetails = (lead) => (
+    <div className="grid grid-cols-1 gap-2">
+      <div className="min-w-0 rounded-lg border border-blue-100 bg-white px-3 py-2.5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-600">Notes</p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700 [overflow-wrap:anywhere]">{lead.notes || "No notes added"}</p>
+      </div>
+      {customFields.map((field) => (
+        <div key={field.id || field._id} className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{field.name}</p>
+          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700 [overflow-wrap:anywhere]">{String(lead.customFields?.[field.key] ?? "-")}</p>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderActions = (lead, compact = false) => (
+    <div className={compact ? "grid grid-cols-4 gap-2" : "flex flex-nowrap items-center justify-end gap-2"}>
+      {onView && (
+        <button type="button" onClick={() => onView(lead._id)} aria-label="View lead" title="View lead" className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${compact ? "h-10 min-w-0 px-1.5 min-[420px]:px-2.5" : "px-2.5 py-2"}`}>
+          <MdVisibility size={16} aria-hidden="true" />
+          <span className={compact ? "hidden min-[420px]:inline" : ""}>View</span>
+        </button>
+      )}
+      {onFollowUp && (
+        <button type="button" onClick={() => onFollowUp(lead)} aria-label="Schedule follow-up" title="Schedule follow-up" className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${compact ? "h-10 min-w-0 px-1.5 min-[420px]:px-2.5" : "px-2.5 py-2"}`}>
+          <MdEvent size={16} aria-hidden="true" />
+          <span className={compact ? "hidden min-[420px]:inline" : ""}>Follow-up</span>
+        </button>
+      )}
+      {onEdit && (
+        <button type="button" onClick={() => onEdit(lead._id)} aria-label="Edit lead" title="Edit lead" className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${compact ? "h-10 min-w-0 px-1.5 min-[420px]:px-2.5" : "px-2.5 py-2"}`}>
+          <MdEdit size={16} aria-hidden="true" />
+          <span className={compact ? "hidden min-[420px]:inline" : ""}>Edit</span>
+        </button>
+      )}
+      {onDelete && (
+        <button type="button" onClick={() => onDelete(lead._id)} aria-label="Delete lead" title="Delete lead" className={`inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-white text-xs font-semibold text-rose-600 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 ${compact ? "h-10 min-w-0 px-1.5 min-[420px]:px-2.5" : "px-2.5 py-2"}`}>
+          <MdDeleteOutline size={16} aria-hidden="true" />
+          <span className={compact ? "hidden min-[420px]:inline" : ""}>Delete</span>
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="w-full">
+      <div className="crm-lead-table-desktop hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[900px] border-collapse text-left">
+          <thead className="bg-slate-50">
+            <tr className="border-b border-slate-200">
+              <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Lead</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Company</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Contact</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Details</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+              <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {leads.map((lead) => (
-              <tr
-                key={lead._id}
-                className="border-b border-white/6 hover:bg-purple-500/10 transition-colors duration-200 last:border-b-0"
-              >
-                <td className="px-4 py-3 text-sm font-bold text-black whitespace-nowrap">
-                  {lead.name}
-                </td>
-                <td className="px-4 py-3 text-sm text-black/60 whitespace-nowrap">
-                  {lead.company}
-                </td>
-                <td className="px-4 py-3 text-xs text-black/60 whitespace-nowrap">
-                  {lead.email}
-                </td>
-                <td className="px-4 py-3 text-sm text-black/60 whitespace-nowrap">
-                  {lead.phone}
-                </td>
-                <td className="px-4 py-3 text-sm text-black/60 whitespace-nowrap max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap">
-                  {lead.notes || "No notes"}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <StatusBadge status={lead.status} />
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    
-                    <button
-                      onClick={() => onEdit?.(lead._id)}
-                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold font-mono border bg-green-500/7 border-green-500/20 text-green-500 hover:bg-green-500/15 transition-all duration-200"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => onDelete?.(lead._id)}
-                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold font-mono border bg-red-500/8 border-red-500/20 text-red-400 hover:bg-red-500/15 transition-all duration-200"
-                    >
-                      Delete
-                    </button>
+              <tr key={lead._id} className="align-top transition hover:bg-slate-50/80">
+                <td className="px-5 py-4">
+                  <div className="flex min-w-[150px] items-center gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700">
+                      {lead.name?.slice(0, 1).toUpperCase() || "L"}
+                    </span>
+                    <span className="max-w-[200px] truncate text-sm font-semibold text-slate-900">{lead.name || "Unnamed lead"}</span>
                   </div>
+                </td>
+                <td className="max-w-[190px] px-4 py-4 text-sm text-slate-600"><span className="block truncate">{lead.company || "-"}</span></td>
+                <td className="max-w-[230px] px-4 py-4">
+                  <span className="block truncate text-sm text-slate-700">{lead.email || "-"}</span>
+                  <span className="mt-1 block text-xs text-slate-400">{lead.phone || "No phone"}</span>
+                </td>
+                <td className="px-4 py-4">
+                  <details className="group max-w-[210px]">
+                    <summary className="cursor-pointer list-none text-xs font-medium text-blue-700 hover:text-blue-800">
+                      <span className="group-open:hidden">View details</span>
+                      <span className="hidden group-open:inline">Hide details</span>
+                    </summary>
+                    <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-blue-100 bg-blue-50/60 p-2.5">
+                      {renderLeadDetails(lead)}
+                    </div>
+                  </details>
+                </td>
+                <td className="px-4 py-4">
+                  <StatusBadge status={lead.status} onChange={onStatusChange ? (nextStatus) => onStatusChange(lead._id, nextStatus) : undefined} />
+                </td>
+                <td className="px-5 py-4">
+                  <div className="flex justify-end">{renderActions(lead)}</div>
                 </td>
               </tr>
             ))}
@@ -97,55 +219,50 @@ const LeadTable = ({ leads = [], onView, onEdit, onDelete }) => {
         </table>
       </div>
 
-      {/* ✅ Mobile Cards — shown only on small screens */}
-      <div className="md:hidden divide-y divide-white/4">
+      <div className="crm-lead-table-cards divide-y divide-slate-100 md:hidden">
         {leads.map((lead) => (
-          <div
-            key={lead._id}
-            className="p-4 hover:bg-purple-500/10 transition-colors duration-200"
-          >
-            <div className="flex items-start justify-between mb-3 gap-4">
-              <div>
-                <p className="text-sm font-bold text-black">{lead.name}</p>
-                <p className="text-xs text-black/45 mt-0.5">{lead.company}</p>
+          <article key={lead._id} className="p-4 transition hover:bg-slate-50/80 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700">
+                  {lead.name?.slice(0, 1).toUpperCase() || "L"}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="truncate text-sm font-semibold text-slate-900">{lead.name || "Unnamed lead"}</h3>
+                  <p className="mt-0.5 truncate text-xs text-slate-500">{lead.company || "No company"}</p>
+                </div>
               </div>
-              <StatusBadge status={lead.status} />
+              <StatusBadge status={lead.status} onChange={onStatusChange ? (nextStatus) => onStatusChange(lead._id, nextStatus) : undefined} />
             </div>
 
-            <div className="space-y-1 mb-4">
-              <p className="text-xs text-black/40">{lead.email}</p>
-              <p className="text-xs text-black/40">{lead.phone}</p>
-              <p className="text-xs text-black/60 line-clamp-2">{lead.notes || "No notes"}</p>
+            <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+              <p className="truncate text-slate-600" title={lead.email}>{lead.email || "No email"}</p>
+              <p className="text-slate-600">{lead.phone || "No phone"}</p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onView?.(lead)}
-                className="flex-1 py-2 rounded-xl text-xs font-bold font-mono border bg-purple-500/10 border-purple-500/25 text-purple-400 hover:bg-purple-500/20 transition-all duration-200"
-              >
-                View
-              </button>
-              <button
-                onClick={() => onEdit?.(lead)}
-                className="flex-1 py-2 rounded-xl text-xs font-bold font-mono border bg-green-500/7 border-green-500/20 text-green-500 hover:bg-green-500/15  transition-all duration-200"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => onDelete?.(lead._id)}
-                className="flex-1 py-2 rounded-xl text-xs font-bold font-mono border bg-red-500/8 border-red-500/20 text-red-400 hover:bg-red-500/15 transition-all duration-200"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
+            {(lead.notes || customFields.length > 0) && (
+              <details className="group mt-3 overflow-hidden rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/60">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100/60">
+                  <span className="group-open:hidden">Show notes and additional fields</span>
+                  <span className="hidden group-open:inline">Hide notes and additional fields</span>
+                  <MdKeyboardArrowDown size={18} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+                </summary>
+                <div className="border-t border-blue-100 p-2.5">{renderLeadDetails(lead)}</div>
+              </details>
+            )}
+
+            <div className="mt-4 border-t border-slate-100 pt-3">{renderActions(lead, true)}</div>
+          </article>
         ))}
       </div>
 
-      {/* Empty state */}
       {leads.length === 0 && (
-        <div className="py-16 text-center">
-          <p className="text-white/20 font-mono text-sm">// no leads found</p>
+        <div className="px-5 py-16 text-center">
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-slate-100 text-slate-400">
+            <MdSearch size={22} />
+          </span>
+          <h3 className="mt-3 text-sm font-semibold text-slate-800">No leads found</h3>
+          <p className="mt-1 text-xs text-slate-500">Try another search or add a new lead to get started.</p>
         </div>
       )}
     </div>

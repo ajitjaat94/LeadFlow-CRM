@@ -1,34 +1,39 @@
 import { Routes, Route } from "react-router-dom";
 import Dashboard from "../pages/Dashboard";
 import Leads from "../pages/Leads";
-import ProtectedRoute from "../components/ProtectedRoute";
-import HomePage from "../pages/HomePage";
+import LeadForm from "../pages/LeadForm";
 import Contact from "../pages/Contact";
 import About from "../pages/About";
+import WorkspacePage from "../pages/WorkspacePage";
+import ProtectedRoute from "../components/ProtectedRoute";
+import FollowUps from "../pages/FollowUps";
+import Contacts from "../pages/Contacts";
+import Deals from "../pages/Deals";
+import Calendar from "../pages/Calendar";
+import Reports from "../pages/Reports";
+import Team from "../pages/Team";
+import JoinWorkspace from "../pages/JoinWorkspace";
 
 const AppRoute = () => {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route
-        path="/leads"
-        element={
-          <ProtectedRoute>
-            <Leads />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/lead/:id"
-        element={
-          <ProtectedRoute>
-            <Leads />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/" element={<Dashboard />} />
+      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
+      <Route path="/leads/new" element={<ProtectedRoute><LeadForm /></ProtectedRoute>} />
+      <Route path="/lead/:id" element={<ProtectedRoute><LeadForm /></ProtectedRoute>} />
+      <Route path="/follow-ups" element={<ProtectedRoute><FollowUps /></ProtectedRoute>} />
+      <Route path="/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
+      <Route path="/deals" element={<ProtectedRoute><Deals /></ProtectedRoute>} />
+      <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
+      <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+      <Route path="/team" element={<ProtectedRoute><Team /></ProtectedRoute>} />
+      <Route path="/join/:token" element={<JoinWorkspace />} />
       <Route path="/about" element={<About />} />
       <Route path="/contact" element={<Contact />} />
+      {["companies", "tasks", "automation", "settings"].map((section) => (
+        <Route key={section} path={`/${section}`} element={<WorkspacePage section={section} />} />
+      ))}
     </Routes>
   );
 };

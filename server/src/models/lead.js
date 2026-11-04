@@ -23,6 +23,11 @@ const leadSchema = new mongoose.Schema({
     phone: {
         type: String,
     },
+    source: {
+        type: String,
+        trim: true,
+        default: '',
+    },
     status: {
         type: String,
         enum: ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'],

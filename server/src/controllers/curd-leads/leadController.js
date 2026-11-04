@@ -2,8 +2,8 @@ import { lead } from "../../models/lead.js";
 //---------------------------------------------------------
 async function leadController(req, res) {
     try {
-        const { name, company, email, phone, status, notes, customFields } = req.body;
-        if (!name && !company && !email && !phone) {
+        const { name, company, email, phone, source, status, notes, customFields } = req.body;
+        if (!name || !company || !email) {
             return res.status(400).json({ message: 'All fields are required' })
         };
 
@@ -13,6 +13,7 @@ async function leadController(req, res) {
             company,
             email,
             phone,
+            source,
             status,
             notes,
             customFields: customFields || {}

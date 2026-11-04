@@ -15,7 +15,11 @@ const defaultProbabilities = {
 const normalizeDealInput = (body = {}) => {
     const value = Number(body.value ?? 0);
     const stage = typeof body.stage === "string" ? body.stage.trim() : "";
-    const probability = Number(body.probability ?? defaultProbabilities[stage] ?? 10);
+    const probability = stage === "Won"
+        ? defaultProbabilities.Won
+        : stage === "Lost"
+            ? defaultProbabilities.Lost
+            : Number(body.probability ?? defaultProbabilities[stage] ?? 10);
     const currency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : "";
 
     if (typeof body.name !== "string" || !body.name.trim()) {

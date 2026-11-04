@@ -98,18 +98,26 @@ export const getContacts = async (req, res) => {
                 status: "Pending",
             }).sort({ scheduledDate: 1, scheduledTime: 1 }).lean()
             : [];
-        const nextFollowUpByLead = new Map();
+        const followUpsByLead = new Map();
         pendingFollowUps.forEach((item) => {
-            if (!nextFollowUpByLead.has(String(item.leadId))) nextFollowUpByLead.set(String(item.leadId), item);
+            const key = String(item.leadId);
+            if (!followUpsByLead.has(key)) followUpsByLead.set(key, []);
+            followUpsByLead.get(key).push(item);
         });
         const data = contacts.map((item) => {
             const contactLeads = item.leadIds.map((id) => leadsById.get(String(id))).filter(Boolean);
-            const nextFollowUps = contactLeads.map((linkedLead) => nextFollowUpByLead.get(String(linkedLead._id))).filter(Boolean);
-            nextFollowUps.sort((a, b) => `${a.scheduledDate}T${a.scheduledTime}`.localeCompare(`${b.scheduledDate}T${b.scheduledTime}`));
-            const next = nextFollowUps[0];
+            const pendingForContact = contactLeads.flatMap((linkedLead) => followUpsByLead.get(String(linkedLead._id)) || []);
+            pendingForContact.sort((a, b) => `${a.scheduledDate}T${a.scheduledTime}`.localeCompare(`${b.scheduledDate}T${b.scheduledTime}`));
+            const next = pendingForContact[0];
             return {
                 ...item,
                 linkedLeadCount: contactLeads.length,
+                pendingFollowUps: pendingForContact.map((followUpItem) => ({
+                    scheduledDate: followUpItem.scheduledDate,
+                    scheduledTime: followUpItem.scheduledTime,
+                    type: followUpItem.type,
+                    status: followUpItem.status,
+                })),
                 nextFollowUp: next ? {
                     scheduledDate: next.scheduledDate,
                     scheduledTime: next.scheduledTime,

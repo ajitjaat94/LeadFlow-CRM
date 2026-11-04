@@ -4,10 +4,25 @@ import { lead } from "../models/lead.js";
 const followUpTypes = ["Call", "WhatsApp", "Email", "Meeting", "Other"];
 const followUpStatuses = ["Pending", "Completed", "Cancelled"];
 
-const isValidSchedule = (scheduledDate, scheduledTime) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate) || !/^\d{2}:\d{2}$/.test(scheduledTime)) return false;
-    const scheduledAt = new Date(`${scheduledDate}T${scheduledTime}`);
-    return !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now();
+const isValidSchedule = (scheduledDate, scheduledTime, timeZone) => {
+    if (typeof scheduledDate !== "string" || typeof scheduledTime !== "string"
+        || !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate) || !/^\d{2}:\d{2}$/.test(scheduledTime)) return false;
+    const [year, month, day] = scheduledDate.split("-").map(Number);
+    const [hour, minute] = scheduledTime.split(":").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day || hour > 23 || minute > 59) return false;
+
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+    }).formatToParts(new Date());
+    const current = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+    return `${scheduledDate}T${scheduledTime}` > `${current.year}-${current.month}-${current.day}T${current.hour}:${current.minute}`;
 };
 
 const findWorkspaceLead = (leadId, memberIds) => lead.findOne({ _id: leadId, user: { $in: memberIds } }).select("_id name company email phone");
@@ -43,7 +58,7 @@ export const createFollowUp = async (req, res) => {
         const { leadId, type, scheduledDate, scheduledTime, note = "" } = req.body;
         if (!leadId || !type || !scheduledDate || !scheduledTime) return res.status(400).json({ message: "Lead, type, date, and time are required" });
         if (!followUpTypes.includes(type)) return res.status(400).json({ message: "Invalid follow-up type" });
-        if (!isValidSchedule(scheduledDate, scheduledTime)) return res.status(400).json({ message: "Follow-up date and time must be in the future" });
+        if (!isValidSchedule(scheduledDate, scheduledTime, req.workspace.timeZone || "Asia/Kolkata")) return res.status(400).json({ message: "Follow-up date and time must be in the future in your workspace timezone" });
         const ownedLead = await findWorkspaceLead(leadId, req.workspaceMemberIds);
         if (!ownedLead) return res.status(404).json({ message: "Lead not found" });
 
@@ -61,7 +76,7 @@ export const updateFollowUp = async (req, res) => {
         if (!current) return res.status(404).json({ message: "Follow-up not found" });
         if (current.status !== "Pending") return res.status(400).json({ message: "Only pending follow-ups can be edited" });
         const { type, scheduledDate, scheduledTime, note = "" } = req.body;
-        if (!followUpTypes.includes(type) || !isValidSchedule(scheduledDate, scheduledTime)) return res.status(400).json({ message: "Provide a valid future date, time, and type" });
+        if (!followUpTypes.includes(type) || !isValidSchedule(scheduledDate, scheduledTime, req.workspace.timeZone || "Asia/Kolkata")) return res.status(400).json({ message: "Provide a valid future date, time, and type in your workspace timezone" });
         current.type = type;
         current.scheduledDate = scheduledDate;
         current.scheduledTime = scheduledTime;

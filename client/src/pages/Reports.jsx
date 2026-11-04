@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   MdArrowDownward,
   MdArrowUpward,
+  MdAccountBalanceWallet,
   MdCalendarToday,
   MdCheckCircle,
   MdDownload,
   MdGroups,
-  MdOutlineAttachMoney,
   MdOutlineEventAvailable,
   MdRefresh,
 } from "react-icons/md";
@@ -329,7 +329,7 @@ const Reports = () => {
   const inputClass = "min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
 
   return (
-    <div className={`crm-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
+    <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
       <DashboardSidebar isOpen={sidebarOpen} onClose={() => { if (window.innerWidth <= 760) setSidebarOpen(false); }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
         <DashboardTopbar searchTerm="" onSearchChange={() => {}} onAddLead={exportReport} addButtonLabel="Export report" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
@@ -353,7 +353,7 @@ const Reports = () => {
           <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
             <Metric label="Leads created" value={loading ? "—" : periodLeads.length} detail={`${leads.length} total in workspace`} icon={MdGroups} tone="bg-blue-50 text-blue-700" />
             <Metric label="Lead win rate" value={`${conversionRate}%`} detail={`${wonLeads.length} won · ${lostLeads.length} lost`} icon={MdCheckCircle} tone="bg-emerald-50 text-emerald-700" />
-            <Metric label="Weighted pipeline" value={loading ? "—" : weightedPipeline} detail={`${openDeals.length} open deals in selected period`} icon={MdOutlineAttachMoney} tone="bg-violet-50 text-violet-700" />
+            <Metric label="Weighted pipeline" value={loading ? "—" : weightedPipeline} detail={`${openDeals.length} open deals in selected period`} icon={MdAccountBalanceWallet} tone="bg-violet-50 text-violet-700" />
             <Metric label="Follow-ups completed" value={`${completionRate}%`} detail={`${completedFollowUps.length} of ${periodFollowUps.length} scheduled`} icon={MdOutlineEventAvailable} tone="bg-amber-50 text-amber-700" />
           </section>
 

@@ -14,6 +14,8 @@ import Calendar from "../pages/Calendar";
 import Reports from "../pages/Reports";
 import Team from "../pages/Team";
 import JoinWorkspace from "../pages/JoinWorkspace";
+import Settings from "../pages/Settings";
+import LeadDetail from "../pages/LeadDetail";
 
 const NotFound = () => (
   <main className="grid min-h-screen place-items-center bg-slate-50 px-5 py-12">
@@ -70,7 +72,7 @@ const AppRoute = () => {
       "/contact": "Contact",
     };
     const title = pathname.startsWith("/lead/")
-      ? "Edit lead"
+      ? (pathname.endsWith("/edit") ? "Edit lead" : "View lead")
       : pathname.startsWith("/join/")
         ? "Join workspace"
         : titles[pathname] || "Page not found";
@@ -83,7 +85,8 @@ const AppRoute = () => {
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
       <Route path="/leads/new" element={<ProtectedRoute><LeadForm /></ProtectedRoute>} />
-      <Route path="/lead/:id" element={<ProtectedRoute><LeadForm /></ProtectedRoute>} />
+      <Route path="/lead/:id" element={<ProtectedRoute><LeadDetail /></ProtectedRoute>} />
+      <Route path="/lead/:id/edit" element={<ProtectedRoute><LeadForm /></ProtectedRoute>} />
       <Route path="/follow-ups" element={<ProtectedRoute><FollowUps /></ProtectedRoute>} />
       <Route path="/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
       <Route path="/deals" element={<ProtectedRoute><Deals /></ProtectedRoute>} />
@@ -93,7 +96,8 @@ const AppRoute = () => {
       <Route path="/join/:token" element={<JoinWorkspace />} />
       <Route path="/about" element={<About />} />
       <Route path="/contact" element={<Contact />} />
-      {["companies", "tasks", "automation", "settings"].map((section) => (
+      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      {["companies", "tasks", "automation"].map((section) => (
         <Route key={section} path={`/${section}`} element={<WorkspacePage section={section} />} />
       ))}
       <Route path="*" element={<NotFound />} />

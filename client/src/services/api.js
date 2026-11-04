@@ -211,6 +211,21 @@ export const getWorkspaceTeam = async () => {
   return data.data;
 };
 
+export const getSettings = async () => {
+  const { data } = await api.get("/settings");
+  return data.data;
+};
+
+export const updateProfileSettings = async (payload) => {
+  const { data } = await api.put("/settings/profile", payload);
+  return data.data;
+};
+
+export const updateWorkspaceSettings = async (payload) => {
+  const { data } = await api.put("/settings/workspace", payload);
+  return data.data;
+};
+
 export const createTeamInvitation = async (payload) => {
   const { data } = await api.post("/team/invitations", payload);
   return data.data;

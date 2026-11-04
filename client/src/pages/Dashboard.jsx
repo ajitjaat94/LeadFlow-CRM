@@ -16,7 +16,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import { LEAD_STATUSES } from "../data/leadStatuses";
-import { completeFollowUp, deleteLead, getDashboardFollowUps, getLeads } from "../services/api";
+import { completeFollowUp, deleteLead, getDashboardFollowUps, getLeads, getSettings } from "../services/api";
+import { getBrowserTimeZone, getDateTimeParts, isFollowUpOverdue } from "../utils/followUpTime";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CHART_BOUNDS = { left: 44, right: 690, top: 20, bottom: 164 };
@@ -113,6 +114,7 @@ const Dashboard = () => {
   const location = useLocation();
   const [leads, setLeads] = useState([]);
   const [followUps, setFollowUps] = useState([]);
+  const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
   const [loading, setLoading] = useState(Boolean(localStorage.getItem("accessToken")));
   const [refreshing, setRefreshing] = useState(false);
   const [leadError, setLeadError] = useState("");
@@ -146,6 +148,7 @@ const Dashboard = () => {
       setAccessToken(null);
       setLeads([]);
       setFollowUps([]);
+      setTimeZone(getBrowserTimeZone());
       setLoading(false);
       setRefreshing(false);
       setLeadError("");
@@ -164,7 +167,7 @@ const Dashboard = () => {
     const loadDashboard = async () => {
       setLeadError("");
       setTaskError("");
-      const [leadResult, followUpResult] = await Promise.allSettled([getLeads(), getDashboardFollowUps()]);
+      const [leadResult, followUpResult, settingsResult] = await Promise.allSettled([getLeads(), getDashboardFollowUps(), getSettings()]);
       if (!active) return;
 
       if (leadResult.status === "fulfilled" && Array.isArray(leadResult.value)) {
@@ -185,6 +188,11 @@ const Dashboard = () => {
           : new Error("The follow-ups API returned an invalid response.");
         setFollowUps([]);
         setTaskError(toUserFacingLoadError(error, "Follow-up data"));
+      }
+      if (settingsResult.status === "fulfilled") {
+        setTimeZone(settingsResult.value.workspace.timeZone || "Asia/Kolkata");
+      } else {
+        setTimeZone(getBrowserTimeZone());
       }
 
       setLoading(false);
@@ -363,15 +371,17 @@ const Dashboard = () => {
     (a, b) => (new Date(b.createdAt || 0).getTime() || 0) - (new Date(a.createdAt || 0).getTime() || 0),
   ).slice(0, 5), [matchingLeads]);
   const now = new Date();
-  const nowTaskTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const nowParts = getDateTimeParts(now, timeZone);
+  const todayTaskKey = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
+  const nowTaskTime = `${nowParts.hour}:${nowParts.minute}`;
   const pendingFollowUps = useMemo(() => followUps
     .filter((item) => item.status === "Pending")
     .sort((a, b) => `${a.scheduledDate}T${a.scheduledTime}`.localeCompare(`${b.scheduledDate}T${b.scheduledTime}`)), [followUps]);
-  const groupedTasks = useMemo(() => ({
-    Overdue: pendingFollowUps.filter((item) => item.scheduledDate < todayKey || (item.scheduledDate === todayKey && item.scheduledTime < nowTaskTime)),
-    Today: pendingFollowUps.filter((item) => item.scheduledDate === todayKey && item.scheduledTime >= nowTaskTime),
-    Upcoming: pendingFollowUps.filter((item) => item.scheduledDate > todayKey),
-  }), [nowTaskTime, pendingFollowUps, todayKey]);
+  const groupedTasks = {
+    Overdue: pendingFollowUps.filter((item) => isFollowUpOverdue(item, timeZone, now)),
+    Today: pendingFollowUps.filter((item) => item.scheduledDate === todayTaskKey && item.scheduledTime >= nowTaskTime),
+    Upcoming: pendingFollowUps.filter((item) => item.scheduledDate > todayTaskKey),
+  };
   const userName = (() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null")?.username?.split(" ")[0] || "";
@@ -756,7 +766,7 @@ const Dashboard = () => {
                                 <td className="px-3 py-3 text-[11px] text-slate-700"><time dateTime={record.createdAt}>{formatTimestamp(record.createdAt)}</time></td>
                                 <td className="px-3 py-3">
                                   <div className="flex items-center gap-1">
-                                      <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => navigate(`/lead/${record._id}`)} aria-label={`Edit ${record.name || "lead"}`} title={record._id ? "Edit lead" : "Lead ID is unavailable"} disabled={!record._id}>Edit</button>
+                                      <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => navigate(`/lead/${record._id}/edit`)} aria-label={`Edit ${record.name || "lead"}`} title={record._id ? "Edit lead" : "Lead ID is unavailable"} disabled={!record._id}>Edit</button>
                                       <button type="button" className="rounded-md px-2 py-1.5 font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => handleDeleteLead(record._id)} aria-label={`Delete ${record.name || "lead"}`} title={record._id ? "Delete lead" : "Lead ID is unavailable"} disabled={!record._id}>Delete</button>
                                   </div>
                                 </td>

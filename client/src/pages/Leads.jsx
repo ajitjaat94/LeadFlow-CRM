@@ -523,7 +523,7 @@ const Leads = () => {
                     <p className="mt-1 text-sm text-slate-600">Try another search or clear the selected filters.</p>
                     <button type="button" onClick={clearFilters} className="mt-4 min-h-10 rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-800 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">Clear filters</button>
                   </div>
-                    : <LeadTable leads={visibleLeads} customFields={customFields} onView={(id) => navigate(`/lead/${id}`)} onFollowUp={setFollowUpLead} onEdit={(id) => navigate(`/lead/${id}`)} onDelete={handleDeleteLead} onStatusChange={handleStatusChange} />}
+                    : <LeadTable leads={visibleLeads} customFields={customFields} onView={(id) => navigate(`/lead/${id}`)} onFollowUp={setFollowUpLead} onEdit={(id) => navigate(`/lead/${id}/edit`)} onDelete={handleDeleteLead} onStatusChange={handleStatusChange} />}
             {!loading && !loadError && filteredLeads.length > PAGE_SIZE && (
               <nav className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 sm:px-5" aria-label="Lead pages">
                 <p className="text-xs text-slate-600">Showing {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, filteredLeads.length)} of {filteredLeads.length}</p>

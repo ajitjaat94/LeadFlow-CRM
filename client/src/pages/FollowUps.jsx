@@ -4,21 +4,17 @@ import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import FollowUpCard from "../components/follow-ups/FollowUpCard";
 import FollowUpModal from "../components/follow-ups/FollowUpModal";
-import { cancelFollowUp, completeFollowUp, getFollowUps, getLeads } from "../services/api";
+import { cancelFollowUp, completeFollowUp, getFollowUps, getLeads, getSettings } from "../services/api";
+import { getBrowserTimeZone, getTodayInTimeZone, isFollowUpOverdue } from "../utils/followUpTime";
 
 const filters = ["All", "Today", "Upcoming", "Overdue", "Completed"];
 
-const getToday = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
-
-const matchesFilter = (item, filter, today) => {
+const matchesFilter = (item, filter, today, timeZone) => {
   if (filter === "Completed") return item.status === "Completed";
   if (item.status !== "Pending") return filter === "All";
   if (filter === "Today") return item.scheduledDate === today;
   if (filter === "Upcoming") return item.scheduledDate > today;
-  if (filter === "Overdue") return item.scheduledDate < today;
+  if (filter === "Overdue") return isFollowUpOverdue(item, timeZone);
   return true;
 };
 
@@ -29,6 +25,8 @@ const errorMessage = (requestError, fallback) => (
 const FollowUps = () => {
   const [followUps, setFollowUps] = useState([]);
   const [leads, setLeads] = useState([]);
+  const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
+  const [timeZoneError, setTimeZoneError] = useState("");
   const [filter, setFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -43,8 +41,8 @@ const FollowUps = () => {
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([getFollowUps(), getLeads()])
-      .then(([followUpResult, leadResult]) => {
+    Promise.allSettled([getFollowUps(), getLeads(), getSettings()])
+      .then(([followUpResult, leadResult, settingsResult]) => {
         if (!active) return;
         if (followUpResult.status === "rejected") {
           setLoadError(errorMessage(followUpResult.reason, "Unable to load follow-ups."));
@@ -56,6 +54,14 @@ const FollowUps = () => {
         } else {
           setLeadsError(errorMessage(leadResult.reason, "Unable to load leads for scheduling."));
         }
+        if (settingsResult.status === "fulfilled") {
+          setTimeZone(settingsResult.value.workspace.timeZone || "Asia/Kolkata");
+          setTimeZoneError("");
+        } else {
+          const browserTimeZone = getBrowserTimeZone();
+          setTimeZone(browserTimeZone);
+          setTimeZoneError(`Workspace timezone is unavailable from the server. Overdue status is using your browser timezone (${browserTimeZone}).`);
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -63,20 +69,20 @@ const FollowUps = () => {
     return () => { active = false; };
   }, [retryCount]);
 
-  const today = getToday();
+  const today = getTodayInTimeZone(timeZone);
   const counts = useMemo(() => Object.fromEntries(
-    filters.map((option) => [option, followUps.filter((item) => matchesFilter(item, option, today)).length]),
-  ), [followUps, today]);
+    filters.map((option) => [option, followUps.filter((item) => matchesFilter(item, option, today, timeZone)).length]),
+  ), [followUps, timeZone, today]);
   const visibleFollowUps = useMemo(
-    () => followUps.filter((item) => matchesFilter(item, filter, today)),
-    [filter, followUps, today],
+    () => followUps.filter((item) => matchesFilter(item, filter, today, timeZone)),
+    [filter, followUps, timeZone, today],
   );
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "your local time zone";
 
   const retryLoad = () => {
     setLoading(true);
     setLoadError("");
     setLeadsError("");
+    setTimeZoneError("");
     setRetryCount((count) => count + 1);
   };
 
@@ -163,6 +169,7 @@ const FollowUps = () => {
               <button type="button" onClick={() => { setError(""); setNotice(""); }} aria-label="Dismiss message">×</button>
             </div>
           )}
+          {timeZoneError && <p className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">{timeZoneError} Overdue indicators currently use your browser timezone.</p>}
           <section className="crm-panel" aria-label="Follow-up list">
             <div className="follow-up-filters" role="group" aria-label="Filter follow-ups">
               {filters.map((option) => (
@@ -207,6 +214,7 @@ const FollowUps = () => {
                     onEdit={setEditing}
                     onCancel={handleCancel}
                     busy={busyIds.has(item._id)}
+                    timeZone={timeZone}
                   />
                 ))}
               </div>

@@ -155,8 +155,6 @@ const Team = () => {
         <DashboardTopbar
           searchTerm=""
           onSearchChange={() => {}}
-          onAddLead={canManage ? () => setInviteOpen(true) : undefined}
-          addButtonLabel="Invite teammate"
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
           sidebarOpen={sidebarOpen}
         />
@@ -222,7 +220,7 @@ const Team = () => {
                     </div>
                     <div className="flex items-center gap-3">
                       {member.role === "owner" ? (
-                        <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold capitalize text-violet-700">Owner</span>
+                        <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">Workspace owner</span>
                       ) : canManage ? (
                         <select
                           aria-label={`Role for ${member.username}`}
@@ -235,7 +233,7 @@ const Team = () => {
                           <option value="admin">Admin</option>
                         </select>
                       ) : (
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-600">{member.role}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-600">Workspace {member.role}</span>
                       )}
                       {canManage && member.role !== "owner" && (
                         <button

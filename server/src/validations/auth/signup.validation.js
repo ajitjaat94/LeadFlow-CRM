@@ -9,6 +9,7 @@ export const signupValidate = [
         .withMessage('Username must be at least 3 cheracters long'),
 
     body('email')
+        .trim()
         .notEmpty()
         .withMessage('Email is required')
         .isEmail()

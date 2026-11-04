@@ -25,6 +25,11 @@ const workspaceSchema = new mongoose.Schema({
         trim: true,
         maxlength: 120,
     },
+    timeZone: {
+        type: String,
+        trim: true,
+        default: "Asia/Kolkata",
+    },
     owner: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "user",

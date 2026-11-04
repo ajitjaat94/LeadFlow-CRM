@@ -1,6 +1,7 @@
 import { body } from "express-validator";
 export const loginValidation = [
     body('email')
+        .trim()
         .notEmpty()
         .withMessage('Email is requred')
         .isEmail()

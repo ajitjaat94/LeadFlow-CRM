@@ -11,6 +11,7 @@ import { followUpRoutes } from './routes/followUp.routes.js';
 import { contactRoutes } from './routes/contact.routes.js';
 import { dealRoutes } from './routes/deal.routes.js';
 import { teamRoutes } from './routes/team.routes.js';
+import { settingsRoutes } from './routes/settings.routes.js';
 
 //------------------------------------------------
 //Initialize express app
@@ -38,6 +39,7 @@ app.use('/api/follow-ups', followUpRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/deals', dealRoutes);
 app.use('/api/team', teamRoutes);
+app.use('/api/settings', settingsRoutes);
 
 
 app.get('/', (req, res) => {

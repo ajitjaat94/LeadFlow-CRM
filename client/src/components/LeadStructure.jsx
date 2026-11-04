@@ -4,10 +4,10 @@ import Button from "./ui/Button";
 import AddFieldModal from "./AddFieldModal";
 import CustomFieldInput from "./CustomFieldInput";
 import { createLeadField } from "../services/api";
+import { LEAD_QUALIFICATION_STATUSES, LEGACY_LEAD_STATUSES } from "../data/leadStatuses";
 
 const LeadStructure = ({ formData, handleChange, loading, customFields = [], onCustomFieldsChange, onCustomFieldValuesChange }) => {
   const [addFieldOpen, setAddFieldOpen] = useState(false);
-  const activeStatuses = ["New", "Contacted", "Qualified", "Proposal", "Negotiation"];
 
   const handleAddField = async (field) => {
     const savedField = await createLeadField(field);
@@ -105,13 +105,8 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
             onChange={handleChange}
             className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-purple-400"
           >
-            <option value="New">New</option>
-            <option value="Contacted">Contacted</option>
-            <option value="Qualified">Qualified</option>
-            <option value="Proposal">Proposal</option>
-            <option value="Negotiation">Negotiation</option>
-            {!activeStatuses.includes(formData.status) && <option value={formData.status}>{formData.status} (legacy lead status)</option>}
-            {activeStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+            {LEGACY_LEAD_STATUSES.includes(formData.status) && <option value={formData.status}>{formData.status} (legacy lead status)</option>}
+            {LEAD_QUALIFICATION_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
           <p className="mt-1.5 text-xs text-slate-500">A lead tracks qualification. Record Won or Lost as the outcome of an individual deal.</p>
         </div>

@@ -8,6 +8,16 @@ import PhoneWhatsAppAction from "../components/PhoneWhatsAppAction";
 import { getLead, getLeadFields, getLeadFollowUps, getSettings, updateLead } from "../services/api";
 import { getBrowserTimeZone } from "../utils/followUpTime";
 
+const getLeadSource = (record) => {
+  const customFields = record.customFields instanceof Map
+    ? Object.fromEntries(record.customFields)
+    : record.customFields || {};
+  const legacySource = Object.entries(customFields).find(([key]) => (
+    ["source", "lead_source"].includes(key.trim().toLowerCase().replace(/[\s-]+/g, "_"))
+  ))?.[1];
+  return String(record.source || legacySource || "").trim() || "Not recorded";
+};
+
 const LeadDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -120,6 +130,7 @@ const LeadDetail = () => {
                 <dl className="grid gap-4 p-5 sm:grid-cols-2">
                   <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</dt><dd className="mt-1 break-all text-sm text-slate-800">{activeLead.email ? <a className="text-blue-700 hover:underline" href={`mailto:${activeLead.email}`}>{activeLead.email}</a> : "Not provided"}</dd></div>
                   <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</dt><dd className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-800">{activeLead.phone ? <><a className="text-blue-700 hover:underline" href={`tel:${activeLead.phone}`}>{activeLead.phone}</a><PhoneWhatsAppAction name={activeLead.name} phone={activeLead.phone} compact onSavePhone={saveCorrectedPhone} /></> : "Not provided"}</dd></div>
+                  <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Source</dt><dd className="mt-1 text-sm text-slate-800">{getLeadSource(activeLead)}</dd></div>
                 </dl>
               </section>
 

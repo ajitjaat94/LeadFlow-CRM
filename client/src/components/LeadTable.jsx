@@ -10,7 +10,7 @@ import {
   MdVisibility,
 } from "react-icons/md";
 import { createPortal } from "react-dom";
-import { LEAD_STATUSES } from "../data/leadStatuses";
+import { LEAD_QUALIFICATION_STATUSES } from "../data/leadStatuses";
 
 const statusStyles = {
   New: "border-violet-200 bg-violet-50 text-violet-700",
@@ -102,7 +102,7 @@ const StatusPicker = ({ status, onChange }) => {
       </button>
       {open && createPortal(
         <div ref={menuRef} className="fixed z-[100] max-h-64 min-w-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" style={menuPosition} role="listbox">
-          {LEAD_STATUSES.filter((option) => !isLegacyLeadStatus(option)).map((option) => (
+          {LEAD_QUALIFICATION_STATUSES.map((option) => (
             <button
               type="button"
               role="option"

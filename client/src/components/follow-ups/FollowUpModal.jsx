@@ -47,6 +47,7 @@ const FollowUpModal = ({ lead, leads = [], leadsLoading = false, leadsError = ""
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const dialogRef = useRef(null);
   const closeButtonRef = useRef(null);
 
@@ -87,11 +88,13 @@ const FollowUpModal = ({ lead, leads = [], leadsLoading = false, leadsError = ""
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (savingRef.current) return;
     const leadId = form.leadId || selectedLeadId;
     if (!followUp && !leadId) return setError("Choose a lead for this follow-up.");
     if (!form.scheduledDate || !form.scheduledTime) return setError("Date and time are required.");
     if (!isFollowUpInFuture(form.scheduledDate, form.scheduledTime, timeZone)) return setError("Choose a valid future date and time.");
 
+    savingRef.current = true;
     setSaving(true);
     setError("");
     try {
@@ -102,6 +105,7 @@ const FollowUpModal = ({ lead, leads = [], leadsLoading = false, leadsError = ""
     } catch (requestError) {
       setError(requestError.response?.data?.message || "Unable to save follow-up.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

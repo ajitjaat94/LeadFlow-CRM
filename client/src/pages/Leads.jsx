@@ -506,7 +506,7 @@ const Leads = () => {
                   {LEAD_STATUSES.map((status) => <option key={status} value={status}>{["Won", "Lost"].includes(status) ? `${status} (legacy)` : status}</option>)}
                 </select>
               </label>
-              <p className="self-center text-xs text-slate-500">Lead status tracks qualification; use deal stages to record Won or Lost sales outcomes.</p>
+              <p className="self-center text-xs text-slate-500">Won/Lost lead filters show historical statuses only; sales outcomes are tracked on deals.</p>
               <label className="grid gap-1 text-xs font-semibold text-slate-700">
                 Source
                 <select className="h-9 min-w-36 max-w-56 rounded-lg border border-slate-200 bg-white px-2.5 text-sm font-normal text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" value={sourceFilter} onChange={(event) => { setSourceFilter(event.target.value); setPage(1); }}>

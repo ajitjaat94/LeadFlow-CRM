@@ -16,7 +16,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
-import { LEAD_STATUSES } from "../data/leadStatuses";
+import { LEAD_QUALIFICATION_STATUSES, LEAD_STATUSES } from "../data/leadStatuses";
 import { completeFollowUp, deleteLead, getDashboardFollowUps, getLeads, getSettings } from "../services/api";
 import { getBrowserTimeZone, getDateTimeParts, isFollowUpOverdue } from "../utils/followUpTime";
 
@@ -281,12 +281,10 @@ const Dashboard = () => {
       status,
       inRangeLeads.filter((record) => record.status === status).length,
     ]));
-    const activeQualificationStatuses = ["New", "Contacted", "Qualified", "Proposal", "Negotiation"];
     return {
       total: inRangeLeads.length,
       qualified: counts.Qualified,
-      activeQualification: activeQualificationStatuses.reduce((total, status) => total + counts[status], 0),
-      legacyStatuses: counts.Won + counts.Lost,
+      activeQualification: LEAD_QUALIFICATION_STATUSES.reduce((total, status) => total + counts[status], 0),
       counts,
     };
   }, [inRangeLeads]);
@@ -595,11 +593,6 @@ const Dashboard = () => {
                         <span className="crm-dashboard-metric-icon"><MdBolt size={21} /></span>
                         <p>In qualification</p><strong>{rangeValid ? leadMetrics.activeQualification : "—"}</strong>
                         <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : "Current lead statuses, not sale outcomes"}</span>
-                      </article>
-                      <article className="crm-dashboard-metric crm-metric-rose">
-                        <span className="crm-dashboard-metric-icon"><MdTrendingDown size={21} /></span>
-                        <p>Legacy lead statuses</p><strong>{rangeValid ? leadMetrics.legacyStatuses : "—"}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">Historical Won/Lost values; deal stages track sales</span>
                       </article>
                     </div>
                   </section>

@@ -32,6 +32,8 @@ const statusDotStyles = {
   Lost: "bg-red-500",
 };
 
+const isLegacyLeadStatus = (status) => ["Won", "Lost"].includes(status);
+const statusLabel = (status) => isLegacyLeadStatus(status) ? `${status} (legacy)` : status;
 
 const StatusBadge = ({ status, onChange }) => {
   const style = statusStyles[status] || statusStyles.New;
@@ -47,7 +49,7 @@ const StatusBadge = ({ status, onChange }) => {
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold font-mono border ${style}`}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-current" />
-      {status}
+      {statusLabel(status)}
     </span>
   );
 };
@@ -92,15 +94,15 @@ const StatusPicker = ({ status, onChange }) => {
         className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold font-mono transition hover:brightness-95 ${statusStyles[status] || statusStyles.New}`}
         aria-expanded={open}
         aria-haspopup="listbox"
-        aria-label={`Change status, currently ${status}`}
+        aria-label={`Change qualification status, currently ${statusLabel(status)}`}
       >
         <span className={`h-2 w-2 rounded-full ${statusDotStyles[status] || statusDotStyles.New}`} />
-        {status}
+        {statusLabel(status)}
         <MdKeyboardArrowDown size={15} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && createPortal(
         <div ref={menuRef} className="fixed z-[100] max-h-64 min-w-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" style={menuPosition} role="listbox">
-          {LEAD_STATUSES.map((option) => (
+          {LEAD_STATUSES.filter((option) => !isLegacyLeadStatus(option)).map((option) => (
             <button
               type="button"
               role="option"

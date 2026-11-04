@@ -14,7 +14,10 @@ import { Link } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import { LEAD_STATUSES } from "../data/leadStatuses";
-import { getDeals, getFollowUps, getLeads } from "../services/api";
+import { getDeals, getFollowUps, getLeads, getSettings } from "../services/api";
+import { getProgressStorageKey } from "../utils/progressStorage";
+import { getBrowserTimeZone, getTodayInTimeZone } from "../utils/followUpTime";
+import { getDateKeyInTimeZone as dateKeyInTimeZone, getFollowUpRangeStart, getFollowUpReportMetrics, shiftDateKey } from "../utils/followUpReportMetrics";
 
 const periods = [
   { value: "30days", label: "Last 30 days", days: 30 },
@@ -32,6 +35,8 @@ const stageColors = {
   Negotiation: "bg-amber-500",
   Won: "bg-emerald-500",
   Lost: "bg-rose-400",
+  "Won (legacy)": "bg-emerald-300",
+  "Lost (legacy)": "bg-rose-300",
   Prospecting: "bg-sky-500",
   Qualification: "bg-indigo-500",
 };
@@ -42,8 +47,13 @@ const dateKey = (date) => {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+const dateKeyUTC = (date) => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
-const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const getCreatedAt = (item) => {
   const date = new Date(item.createdAt);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -77,17 +87,14 @@ const groupedMoney = (items, selectValue) => {
 
 const getLeadSource = (lead) => {
   const fields = lead.customFields instanceof Map ? Object.fromEntries(lead.customFields) : lead.customFields || {};
-  const source = Object.entries(fields).find(([key]) => key.toLowerCase() === "source")?.[1];
-  return String(lead.source || source || "Other").trim() || "Other";
+  const source = Object.entries(fields).find(([key]) => ["source", "lead_source"].includes(key.trim().toLowerCase().replace(/[\s-]+/g, "_")))?.[1];
+  return String(lead.source || source || "").trim() || "Not recorded";
 };
 
-const getRangeStart = (periodValue, now) => {
-  if (periodValue === "all") return null;
-  const selected = periods.find((item) => item.value === periodValue) || periods[0];
-  if (selected.months) return new Date(now.getFullYear(), now.getMonth() - selected.months + 1, 1);
-  const start = startOfDay(now);
-  start.setDate(start.getDate() - selected.days + 1);
-  return start;
+const formatDateKey = (key, options) => {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Intl.DateTimeFormat(undefined, { ...options, timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, day, 12)));
 };
 
 const Metric = ({ label, value, detail, icon: Icon, tone }) => (
@@ -114,6 +121,8 @@ const Reports = () => {
   const [leads, setLeads] = useState([]);
   const [deals, setDeals] = useState([]);
   const [followUps, setFollowUps] = useState([]);
+  const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
+  const [timeZoneError, setTimeZoneError] = useState("");
   const [period, setPeriod] = useState("30days");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -133,6 +142,7 @@ const Reports = () => {
       setLeads(leadData || []);
       setDeals(dealData || []);
       setFollowUps(followUpData || []);
+      localStorage.setItem(getProgressStorageKey("reports-reviewed"), "true");
       setError("");
       if (refresh) setNotice("Reports updated with the latest CRM data.");
     } catch (requestError) {
@@ -153,6 +163,7 @@ const Reports = () => {
         setLeads(leadData || []);
         setDeals(dealData || []);
         setFollowUps(followUpData || []);
+        localStorage.setItem(getProgressStorageKey("reports-reviewed"), "true");
         setError("");
       })
       .catch((requestError) => {
@@ -164,34 +175,63 @@ const Reports = () => {
     return () => { active = false; };
   }, []);
 
-  const rangeStart = useMemo(() => getRangeStart(period, now), [now, period]);
+  useEffect(() => {
+    let active = true;
+    getSettings()
+      .then((settings) => {
+        if (!active) return;
+        setTimeZone(settings.workspace.timeZone || "Asia/Kolkata");
+        setTimeZoneError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        const browserTimeZone = getBrowserTimeZone();
+        setTimeZone(browserTimeZone);
+        setTimeZoneError(`Workspace timezone is unavailable; follow-up report dates use your browser timezone (${browserTimeZone}).`);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const todayInTimeZone = getTodayInTimeZone(timeZone, now);
+  const followUpRangeStart = getFollowUpRangeStart(period, todayInTimeZone);
   const periodLeads = useMemo(() => leads.filter((item) => {
     const createdAt = getCreatedAt(item);
-    return createdAt && createdAt <= now && (!rangeStart || createdAt >= rangeStart);
-  }), [leads, now, rangeStart]);
+    if (!createdAt || createdAt > now) return false;
+    const createdDateKey = dateKeyInTimeZone(createdAt, timeZone);
+    return createdDateKey <= todayInTimeZone && (!followUpRangeStart || createdDateKey >= followUpRangeStart);
+  }), [followUpRangeStart, leads, now, timeZone, todayInTimeZone]);
   const periodDeals = useMemo(() => deals.filter((item) => {
     const createdAt = getCreatedAt(item);
-    return createdAt && createdAt <= now && (!rangeStart || createdAt >= rangeStart);
-  }), [deals, now, rangeStart]);
-  const periodFollowUps = useMemo(() => followUps.filter((item) => (
-    item.scheduledDate
-      && item.scheduledDate <= dateKey(now)
-      && (!rangeStart || item.scheduledDate >= dateKey(rangeStart))
-  )), [followUps, now, rangeStart]);
+    if (!createdAt || createdAt > now) return false;
+    const createdDateKey = dateKeyInTimeZone(createdAt, timeZone);
+    return createdDateKey <= todayInTimeZone && (!followUpRangeStart || createdDateKey >= followUpRangeStart);
+  }), [deals, followUpRangeStart, now, timeZone, todayInTimeZone]);
+  const followUpMetrics = useMemo(() => getFollowUpReportMetrics(followUps, {
+    startDate: followUpRangeStart,
+    endDate: todayInTimeZone,
+    timeZone,
+    now,
+  }), [followUps, followUpRangeStart, now, timeZone, todayInTimeZone]);
+  const {
+    duePeriodFollowUps: periodFollowUps,
+    completedDuringPeriod,
+    pendingDue: pendingFollowUps,
+    completedDue: completedFollowUps,
+    cancelledDue: cancelledFollowUps,
+    duePeriodCompletionRate: dueFollowUpCompletionRate,
+  } = followUpMetrics;
 
-  const wonLeads = periodLeads.filter((item) => item.status === "Won");
-  const lostLeads = periodLeads.filter((item) => item.status === "Lost");
   const openDeals = periodDeals.filter((item) => !["Won", "Lost"].includes(item.stage));
   const wonDeals = periodDeals.filter((item) => item.stage === "Won");
-  const pendingFollowUps = periodFollowUps.filter((item) => item.status === "Pending");
-  const completedFollowUps = periodFollowUps.filter((item) => item.status === "Completed");
-  const conversionRate = periodLeads.length ? Math.round((wonLeads.length / periodLeads.length) * 100) : 0;
-  const completionRate = periodFollowUps.length ? Math.round((completedFollowUps.length / periodFollowUps.length) * 100) : 0;
+  const lostDeals = periodDeals.filter((item) => item.stage === "Lost");
+  const decidedDeals = wonDeals.length + lostDeals.length;
+  const scheduledFollowUpCount = pendingFollowUps.length + completedFollowUps.length;
+  const conversionRate = decidedDeals ? Math.round((wonDeals.length / decidedDeals) * 100) : 0;
   const weightedPipeline = groupedMoney(openDeals, (item) => (Number(item.value) || 0) * (Number(item.probability) || 0) / 100);
   const wonRevenue = groupedMoney(wonDeals, (item) => Number(item.value) || 0);
 
   const leadStageRows = LEAD_STATUSES.map((stage) => ({
-    name: stage,
+    name: ["Won", "Lost"].includes(stage) ? `${stage} (legacy)` : stage,
     count: periodLeads.filter((item) => item.status === stage).length,
   }));
   const maxLeadStage = Math.max(1, ...leadStageRows.map((item) => item.count));
@@ -217,70 +257,67 @@ const Reports = () => {
   }, [periodLeads]);
 
   const trendBuckets = useMemo(() => {
+    const countCreatedBetween = (items, startKey, endKey, includeEnd = false) => items.filter((item) => {
+      const createdAt = getCreatedAt(item);
+      if (!createdAt || createdAt > now) return false;
+      const key = dateKeyInTimeZone(createdAt, timeZone);
+      return key >= startKey && (includeEnd ? key <= endKey : key < endKey);
+    }).length;
+
     if (period === "12months") {
-      const monthStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+      const [currentYear, currentMonth] = todayInTimeZone.split("-").map(Number);
+      const monthStart = new Date(Date.UTC(currentYear, currentMonth - 12, 1));
       return Array.from({ length: 12 }, (_, index) => {
-        const bucketStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + index, 1);
-        const bucketEnd = new Date(bucketStart.getFullYear(), bucketStart.getMonth() + 1, 1);
-        const getCount = (items) => items.filter((item) => {
-          const createdAt = getCreatedAt(item);
-          return createdAt && createdAt >= bucketStart && createdAt < bucketEnd;
-        }).length;
+        const bucketStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + index, 1));
+        const bucketEnd = new Date(Date.UTC(bucketStart.getUTCFullYear(), bucketStart.getUTCMonth() + 1, 1));
+        const startKey = dateKeyUTC(bucketStart);
+        const endKey = dateKeyUTC(bucketEnd);
         return {
-          label: bucketStart.toLocaleDateString(undefined, { month: "short" }),
-          leads: getCount(periodLeads),
-          deals: getCount(periodDeals),
+          label: formatDateKey(startKey, { month: "short" }),
+          leads: countCreatedBetween(periodLeads, startKey, endKey),
+          deals: countCreatedBetween(periodDeals, startKey, endKey),
         };
       });
     }
 
     if (period === "all") {
-      const dates = [...leads, ...deals].map(getCreatedAt).filter(Boolean);
-      const oldest = dates.length
-        ? dates.reduce((minimum, date) => (date < minimum ? date : minimum), dates[0])
-        : now;
-      const firstYear = Math.max(oldest.getFullYear(), now.getFullYear() - 11);
-      return Array.from({ length: now.getFullYear() - firstYear + 1 }, (_, index) => {
+      const dates = [...leads, ...deals].map(getCreatedAt).filter(Boolean)
+        .map((createdAt) => dateKeyInTimeZone(createdAt, timeZone));
+      const currentYear = Number(todayInTimeZone.slice(0, 4));
+      const firstYear = dates.length
+        ? Math.max(dates.reduce((oldestYear, key) => Math.min(oldestYear, Number(key.slice(0, 4))), currentYear), currentYear - 11)
+        : currentYear;
+      return Array.from({ length: currentYear - firstYear + 1 }, (_, index) => {
         const year = firstYear + index;
-        const bucketStart = new Date(year, 0, 1);
-        const bucketEnd = new Date(year + 1, 0, 1);
-        const getCount = (items) => items.filter((item) => {
-          const createdAt = getCreatedAt(item);
-          return createdAt && createdAt >= bucketStart && createdAt < bucketEnd;
-        }).length;
-        return { label: String(year), leads: getCount(periodLeads), deals: getCount(periodDeals) };
+        const startKey = `${year}-01-01`;
+        const endKey = `${year + 1}-01-01`;
+        return {
+          label: String(year),
+          leads: countCreatedBetween(periodLeads, startKey, endKey),
+          deals: countCreatedBetween(periodDeals, startKey, endKey),
+        };
       });
     }
 
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const start = rangeStart || (() => {
-      const dates = [...leads, ...deals].map(getCreatedAt).filter(Boolean);
-      if (!dates.length) return new Date(end.getFullYear(), end.getMonth(), 1);
-      const earliest = new Date(dates.reduce((minimum, date) => Math.min(minimum, date.getTime()), Number.POSITIVE_INFINITY));
-      return new Date(earliest.getFullYear(), earliest.getMonth(), 1);
-    })();
-    const span = Math.max(1, end.getTime() - start.getTime());
+    const startKey = followUpRangeStart || `${todayInTimeZone.slice(0, 7)}-01`;
+    const endKey = shiftDateKey(todayInTimeZone, 1);
+    const startDay = Date.parse(`${startKey}T00:00:00Z`) / 86400000;
+    const endDay = Date.parse(`${endKey}T00:00:00Z`) / 86400000;
+    const spanDays = Math.max(1, endDay - startDay);
     const bucketCount = 6;
     return Array.from({ length: bucketCount }, (_, index) => {
-      const bucketStart = new Date(start.getTime() + (span * index) / bucketCount);
+      const bucketStart = new Date((startDay + Math.floor((spanDays * index) / bucketCount)) * 86400000);
       const bucketEnd = index === bucketCount - 1
-        ? end
-        : new Date(start.getTime() + (span * (index + 1)) / bucketCount);
-      const leadsCount = periodLeads.filter((item) => {
-        const createdAt = getCreatedAt(item);
-        return createdAt && createdAt >= bucketStart && createdAt < bucketEnd;
-      }).length;
-      const dealsCount = periodDeals.filter((item) => {
-        const createdAt = getCreatedAt(item);
-        return createdAt && createdAt >= bucketStart && createdAt < bucketEnd;
-      }).length;
+        ? endKey
+        : dateKeyUTC(new Date((startDay + Math.floor((spanDays * (index + 1)) / bucketCount)) * 86400000));
+      const bucketStartKey = dateKeyUTC(bucketStart);
       return {
-        label: bucketStart.toLocaleDateString(undefined, { day: "numeric", month: "short" }),
-        leads: leadsCount,
-        deals: dealsCount,
+        label: formatDateKey(bucketStartKey, { day: "numeric", month: "short" }),
+        leads: countCreatedBetween(periodLeads, bucketStartKey, bucketEnd),
+        deals: countCreatedBetween(periodDeals, bucketStartKey, bucketEnd),
       };
     });
-  }, [deals, leads, now, period, periodDeals, periodLeads, rangeStart]);
+  }, [deals, followUpRangeStart, leads, now, period, periodDeals, periodLeads, timeZone, todayInTimeZone]);
 
   const maxTrend = Math.max(1, ...trendBuckets.flatMap((item) => [item.leads, item.deals]));
   const activityItems = [...followUps]
@@ -292,23 +329,39 @@ const Reports = () => {
     .slice(0, 6);
 
   const exportReport = () => {
-    if (!periodLeads.length && !periodDeals.length && !periodFollowUps.length) {
+    if (!periodLeads.length && !periodDeals.length && !periodFollowUps.length && !completedDuringPeriod.length) {
       setError("There is no report data in the selected date range to export.");
       return;
     }
+    const exportTime = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "long",
+      timeZone,
+    }).format(new Date());
+    const selectedDateRange = `${followUpRangeStart || "All time"} to ${todayInTimeZone}`;
     const rows = [
+      ["Report metadata", "Value"],
+      ["Report name", "LeadFlow performance report"],
+      ["Selected date range", selectedDateRange],
+      ["Timezone", timeZone],
+      ["Exported at", exportTime],
+      [],
       ["Report section", "Name", "Count", "Value / details"],
       ["Summary", "Leads created", periodLeads.length, ""],
-      ["Summary", "Won leads", wonLeads.length, `${conversionRate}% conversion rate`],
-      ["Summary", "Lost leads", lostLeads.length, ""],
+      ["Summary", "Deal win rate", `${conversionRate}%`, `${wonDeals.length} won of ${decidedDeals} decided deals`],
       ["Summary", "Open deals", openDeals.length, weightedPipeline],
       ["Summary", "Won deals", wonDeals.length, wonRevenue],
-      ["Summary", "Pending follow-ups", pendingFollowUps.length, ""],
+      ["Summary", "Lost deals", lostDeals.length, ""],
+      ["Summary", "Pending follow-ups due in period", pendingFollowUps.length, ""],
+      ["Follow-up completion", "Completed during selected period (completion timestamp)", completedDuringPeriod.length, "CompletedAt is required; historical records with no timestamp are excluded"],
+      ["Follow-up completion", "Completed with scheduled date in selected period", completedFollowUps.length, ""],
+      ["Follow-up completion", "Due-period completion rate", `${dueFollowUpCompletionRate}%`, `${completedFollowUps.length} completed of ${scheduledFollowUpCount} pending or completed; cancelled excluded`],
+      ["Follow-up completion", "Cancelled in scheduled-date period", cancelledFollowUps.length, "Excluded from completion-rate denominator"],
       ...leadStageRows.map((item) => ["Lead stage", item.name, item.count, ""]),
       ...dealStageRows.map((item) => ["Deal stage", item.name, item.count, item.value]),
       ...sourceRows.map((item) => ["Lead source", item.name, item.count, `${item.share}%`]),
       ...["Pending", "Completed", "Cancelled"].map((status) => [
-        "Follow-up status",
+        "Follow-up status (scheduled-date cohort)",
         status,
         periodFollowUps.filter((item) => item.status === status).length,
         "",
@@ -326,6 +379,7 @@ const Reports = () => {
   };
 
   const selectedPeriod = periods.find((item) => item.value === period)?.label || "Last 30 days";
+  const selectedDateRange = `${followUpRangeStart || "All time"} to ${todayInTimeZone}`;
   const inputClass = "min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
 
   return (
@@ -349,13 +403,33 @@ const Reports = () => {
           </section>
 
           {(error || notice) && <div className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-100 bg-rose-50 text-rose-700" : "border-emerald-100 bg-emerald-50 text-emerald-800"}`} role={error ? "alert" : "status"}><span>{error || notice}</span><button type="button" className="font-bold" onClick={() => { setError(""); setNotice(""); }} aria-label="Dismiss message">&times;</button></div>}
+          {timeZoneError && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">{timeZoneError}</p>}
 
-          <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+          <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
             <Metric label="Leads created" value={loading ? "—" : periodLeads.length} detail={`${leads.length} total in workspace`} icon={MdGroups} tone="bg-blue-50 text-blue-700" />
-            <Metric label="Lead win rate" value={`${conversionRate}%`} detail={`${wonLeads.length} won · ${lostLeads.length} lost`} icon={MdCheckCircle} tone="bg-emerald-50 text-emerald-700" />
+            <Metric label="Deal win rate" value={`${conversionRate}%`} detail={`${wonDeals.length} won of ${decidedDeals} decided deals`} icon={MdCheckCircle} tone="bg-emerald-50 text-emerald-700" />
             <Metric label="Weighted pipeline" value={loading ? "—" : weightedPipeline} detail={`${openDeals.length} open deals in selected period`} icon={MdAccountBalanceWallet} tone="bg-violet-50 text-violet-700" />
-            <Metric label="Follow-ups completed" value={`${completionRate}%`} detail={`${completedFollowUps.length} of ${periodFollowUps.length} scheduled`} icon={MdOutlineEventAvailable} tone="bg-amber-50 text-amber-700" />
+            <Metric label="Due-period completion rate" value={`${dueFollowUpCompletionRate}%`} detail={`${completedFollowUps.length} of ${scheduledFollowUpCount} due · cancelled excluded`} icon={MdOutlineEventAvailable} tone="bg-amber-50 text-amber-700" />
+            <Metric label="Completed during period" value={loading ? "—" : completedDuringPeriod.length} detail="Based on completion timestamp; undated history excluded" icon={MdCalendarToday} tone="bg-cyan-50 text-cyan-700" />
           </section>
+
+          <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <SectionHeading title="Follow-up completion by scheduled date" detail={`${selectedDateRange} · ${timeZone} · cancelled items are excluded from the rate`} />
+            <div className="space-y-3 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="font-semibold text-slate-700">Completed follow-ups due in period</span>
+                <span className="font-bold text-slate-900">{completedFollowUps.length} / {scheduledFollowUpCount}</span>
+              </div>
+              <div className="h-3 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="Due-period follow-up completion rate" aria-valuemin={0} aria-valuemax={100} aria-valuenow={dueFollowUpCompletionRate}>
+                <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${dueFollowUpCompletionRate}%` }} />
+              </div>
+              <div className="flex flex-wrap justify-between gap-2 text-[11px] text-slate-500">
+                <span>{dueFollowUpCompletionRate}% completion rate · denominator is pending + completed follow-ups scheduled in range</span>
+                <span>{cancelledFollowUps.length} cancelled excluded</span>
+              </div>
+              <p className="text-[11px] text-slate-500">The separate “Completed during period” total uses completion timestamps, even when the scheduled date is outside this period. Historical completed items without a timestamp are not counted in that total.</p>
+            </div>
+          </article>
 
           <section className="grid gap-4 2xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,.8fr)]">
             <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -380,7 +454,7 @@ const Reports = () => {
             </article>
 
             <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <SectionHeading title="Lead pipeline" detail="Current status of leads created in this period" action={<Link to="/leads" className="text-xs font-bold text-blue-700 hover:text-blue-800">View leads →</Link>} />
+              <SectionHeading title="Lead qualification" detail="Current lead status; historical Won/Lost lead values are retained as legacy statuses" action={<Link to="/leads" className="text-xs font-bold text-blue-700 hover:text-blue-800">View leads →</Link>} />
               <div className="space-y-4 p-4 sm:p-5">
                 {leadStageRows.map((item) => <div key={item.name}>
                   <div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="font-semibold text-slate-700">{item.name}</span><span className="text-slate-500">{item.count}</span></div>
@@ -412,7 +486,7 @@ const Reports = () => {
                   <div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="truncate font-semibold text-slate-700">{item.name}</span><span className="flex-none text-slate-500">{item.count} · {item.share}%</span></div>
                   <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${["bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-sky-500", "bg-pink-500", "bg-indigo-500"][index]}`} style={{ width: `${item.share}%` }} /></div>
                 </div>)}
-                {!loading && !sourceRows.length && <p className="py-8 text-center text-xs text-slate-500">No source information available for this period. Leads without a source are counted as “Other”.</p>}
+                {!loading && !sourceRows.length && <p className="py-8 text-center text-xs text-slate-500">No leads in this period.</p>}
               </div>
             </article>
           </section>
@@ -428,7 +502,7 @@ const Reports = () => {
             </div> : <div className="px-5 py-9 text-center"><p className="text-sm font-semibold text-slate-700">No pending follow-ups in this period</p><p className="mt-1 text-xs text-slate-500">Scheduled follow-ups will appear here.</p><Link to="/calendar" className="mt-3 inline-block text-xs font-bold text-blue-700">Go to calendar →</Link></div>}
           </section>
 
-          {!loading && <p className="text-center text-[10px] text-slate-400">Report period filters leads and deals by creation date and follow-up completion by scheduled date through today. Lead stage reflects its current status.</p>}
+          {!loading && <p className="text-center text-[10px] text-slate-400">Leads and deals are filtered by creation date. Follow-up completion totals use completion timestamps; the due-period rate uses scheduled dates from {selectedDateRange} and excludes cancelled items. Dates use {timeZone}. Deal stages are sale outcomes; lead Won/Lost values are historical only and do not determine deal win rate.</p>}
           {loading && <span className="sr-only" role="status">Loading report data</span>}
         </div>
       </main>

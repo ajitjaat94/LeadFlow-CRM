@@ -7,15 +7,17 @@ import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import LeadTable from "../components/LeadTable";
 import FollowUpModal from "../components/follow-ups/FollowUpModal";
 import { LEAD_STATUSES } from "../data/leadStatuses";
-import { createLead, createLeadField, deleteLead, getLeadFields, getLeads, updateLead } from "../services/api";
+import { createLead, createLeadField, deleteLead, getLeadFields, getLeads, getSettings, updateLead } from "../services/api";
+import { getBrowserTimeZone } from "../utils/followUpTime";
 
-const exportHeaders = ["Name", "Company", "Email", "Phone", "Status", "Notes"];
+const exportHeaders = ["Name", "Company", "Email", "Phone", "Source", "Status", "Notes"];
 const PAGE_SIZE = 10;
 const headerAliases = {
   name: ["name", "full name", "lead name", "contact name", "customer name", "first name", "client", "client name", "company / client", "business / client"],
   company: ["company", "company name", "organization", "organisation", "business", "business name"],
   email: ["email", "email address", "e-mail", "e mail", "mail"],
   phone: ["phone", "phone number", "mobile", "mobile number", "contact number", "telephone", "email / phone", "phone / email"],
+  source: ["source", "lead source", "origin", "acquisition source"],
   status: ["status", "lead status", "stage", "pipeline stage"],
   notes: ["notes", "note", "comments", "description", "remarks"],
 };
@@ -107,6 +109,8 @@ const Leads = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [leads, setLeads] = useState([]);
+  const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
+  const [timeZoneError, setTimeZoneError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -137,8 +141,8 @@ const Leads = () => {
   useEffect(() => {
     let active = true;
 
-    Promise.allSettled([getLeads(), getLeadFields()])
-      .then(([leadResult, fieldResult]) => {
+    Promise.allSettled([getLeads(), getLeadFields(), getSettings()])
+      .then(([leadResult, fieldResult, settingsResult]) => {
         if (!active) return;
         if (leadResult.status === "fulfilled" && Array.isArray(leadResult.value)) {
           const savedLead = location.state?.savedLead;
@@ -156,6 +160,14 @@ const Leads = () => {
         } else {
           setCustomFields([]);
           setFieldsError("Custom fields could not be loaded. Retry to see all lead details.");
+        }
+        if (settingsResult.status === "fulfilled") {
+          setTimeZone(settingsResult.value.workspace.timeZone || "Asia/Kolkata");
+          setTimeZoneError("");
+        } else {
+          const browserTimeZone = getBrowserTimeZone();
+          setTimeZone(browserTimeZone);
+          setTimeZoneError(`Workspace timezone is unavailable; follow-up dates use your browser timezone (${browserTimeZone}).`);
         }
       })
       .finally(() => {
@@ -193,9 +205,9 @@ const Leads = () => {
   const getLeadSource = (lead) => {
     const fields = lead.customFields instanceof Map ? Object.fromEntries(lead.customFields) : lead.customFields || {};
     const value = Object.entries(fields).find(([key]) => ["source", "lead_source"].includes(key.trim().toLowerCase().replace(/[\s-]+/g, "_")))?.[1];
-    return String(lead.source || value || "").trim();
+    return String(lead.source || value || "").trim() || "Not recorded";
   };
-  const sourceOptions = [...new Set(leads.map(getLeadSource).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const sourceOptions = [...new Set(leads.map(getLeadSource))].sort((a, b) => a.localeCompare(b));
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
   const filteredLeads = leads.filter((lead) => {
     const source = getLeadSource(lead);
@@ -243,7 +255,7 @@ const Leads = () => {
   };
 
   const getExportRows = () => {
-    return [exportHeaders, ...filteredLeads.map((lead) => [lead.name, lead.company, lead.email, lead.phone, lead.status, lead.notes])];
+    return [exportHeaders, ...filteredLeads.map((lead) => [lead.name, lead.company, lead.email, lead.phone, getLeadSource(lead), lead.status, lead.notes])];
   };
 
   const downloadBlob = (blob, filename) => {
@@ -352,6 +364,7 @@ const Leads = () => {
           company: row.company,
           email: row.email,
           phone: row.phone,
+          source: row.source,
           status: normalizedStatus,
           notes: row.notes,
           customFields: customFieldValues,
@@ -490,9 +503,10 @@ const Leads = () => {
                 Status
                 <select className="h-9 min-w-36 rounded-lg border border-slate-200 bg-white px-2.5 text-sm font-normal text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
                   <option value="All">All statuses</option>
-                  {LEAD_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                  {LEAD_STATUSES.map((status) => <option key={status} value={status}>{["Won", "Lost"].includes(status) ? `${status} (legacy)` : status}</option>)}
                 </select>
               </label>
+              <p className="self-center text-xs text-slate-500">Lead status tracks qualification; use deal stages to record Won or Lost sales outcomes.</p>
               <label className="grid gap-1 text-xs font-semibold text-slate-700">
                 Source
                 <select className="h-9 min-w-36 max-w-56 rounded-lg border border-slate-200 bg-white px-2.5 text-sm font-normal text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" value={sourceFilter} onChange={(event) => { setSourceFilter(event.target.value); setPage(1); }}>
@@ -506,6 +520,7 @@ const Leads = () => {
             {importProgress && <p className="px-5 py-3 text-sm font-medium text-blue-700" role="status" aria-live="polite">{importProgress}</p>}
             {loadError && <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:mx-5" role="alert"><span>{loadError}</span><button type="button" onClick={retryLoading} className="rounded-md border border-red-300 bg-white px-3 py-1.5 font-semibold text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">Retry</button></div>}
             {fieldsError && <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:mx-5" role="alert"><span>{fieldsError}</span><button type="button" onClick={retryLoading} className="rounded-md border border-amber-300 bg-white px-3 py-1.5 font-semibold text-amber-900 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">Retry</button></div>}
+            {timeZoneError && <p className="mx-4 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:mx-5" role="status">{timeZoneError}</p>}
             {error && <p className="mx-4 mt-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 sm:mx-5" role="alert">{error}</p>}
             {followUpSuccess && <p className="mx-4 mt-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 sm:mx-5" role="status">{followUpSuccess}</p>}
             {loading ? <p className="px-5 py-14 text-center text-sm text-slate-600" role="status">Loading leads...</p>
@@ -551,7 +566,7 @@ const Leads = () => {
           </div>
         </form>
       </div>}
-      {followUpLead && <FollowUpModal lead={followUpLead} onClose={() => setFollowUpLead(null)} onSaved={() => { setFollowUpLead(null); setFollowUpSuccess("Follow-up scheduled successfully."); }} />}
+      {followUpLead && <FollowUpModal lead={followUpLead} leads={leads} leadsLoading={loading} leadsError={loadError} onRetryLeads={retryLoading} timeZone={timeZone} onClose={() => setFollowUpLead(null)} onSaved={() => { setFollowUpLead(null); setFollowUpSuccess("Follow-up scheduled successfully."); }} />}
     </div>
   );
 };

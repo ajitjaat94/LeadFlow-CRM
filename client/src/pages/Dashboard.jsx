@@ -15,6 +15,7 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
+import GettingStartedChecklist from "../components/GettingStartedChecklist";
 import { LEAD_STATUSES } from "../data/leadStatuses";
 import { completeFollowUp, deleteLead, getDashboardFollowUps, getLeads, getSettings } from "../services/api";
 import { getBrowserTimeZone, getDateTimeParts, isFollowUpOverdue } from "../utils/followUpTime";
@@ -62,7 +63,7 @@ const getLeadSource = (record) => {
   const customFields = record.customFields instanceof Map
     ? Object.fromEntries(record.customFields)
     : record.customFields || {};
-  const sourceValue = Object.entries(customFields).find(([key]) => key.toLowerCase() === "source")?.[1];
+  const sourceValue = Object.entries(customFields).find(([key]) => ["source", "lead_source"].includes(key.trim().toLowerCase().replace(/[\s-]+/g, "_")))?.[1];
   const source = record.source || sourceValue;
   return typeof source === "string" && source.trim() ? source.trim() : "Not recorded";
 };
@@ -280,11 +281,12 @@ const Dashboard = () => {
       status,
       inRangeLeads.filter((record) => record.status === status).length,
     ]));
+    const activeQualificationStatuses = ["New", "Contacted", "Qualified", "Proposal", "Negotiation"];
     return {
       total: inRangeLeads.length,
-      won: counts.Won,
-      active: inRangeLeads.length - counts.Won - counts.Lost,
-      lost: counts.Lost,
+      qualified: counts.Qualified,
+      activeQualification: activeQualificationStatuses.reduce((total, status) => total + counts[status], 0),
+      legacyStatuses: counts.Won + counts.Lost,
       counts,
     };
   }, [inRangeLeads]);
@@ -506,6 +508,7 @@ const Dashboard = () => {
             </section>
           ) : (
             <>
+              <GettingStartedChecklist key={accessToken} enabled={Boolean(accessToken)} />
               {(leadError || taskError || notice) && (
                 <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${leadError || taskError ? "border-rose-200 bg-rose-50 text-rose-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role={leadError || taskError ? "alert" : "status"}>
                   <span>{leadError || taskError || notice}</span>
@@ -585,18 +588,18 @@ const Dashboard = () => {
                       </article>
                       <article className="crm-dashboard-metric crm-metric-violet">
                         <span className="crm-dashboard-metric-icon"><MdCheckCircle size={21} /></span>
-                        <p>Won</p><strong>{rangeValid ? leadMetrics.won : "—"}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
+                        <p>Qualified leads</p><strong>{rangeValid ? leadMetrics.qualified : "—"}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : "Qualification status"}</span>
                       </article>
                       <article className="crm-dashboard-metric crm-metric-sky">
                         <span className="crm-dashboard-metric-icon"><MdBolt size={21} /></span>
-                        <p>Active</p><strong>{rangeValid ? leadMetrics.active : "—"}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : leadMetrics.total ? "Not marked Won or Lost" : "No data yet"}</span>
+                        <p>In qualification</p><strong>{rangeValid ? leadMetrics.activeQualification : "—"}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : "Current lead statuses, not sale outcomes"}</span>
                       </article>
                       <article className="crm-dashboard-metric crm-metric-rose">
                         <span className="crm-dashboard-metric-icon"><MdTrendingDown size={21} /></span>
-                        <p>Lost</p><strong>{rangeValid ? leadMetrics.lost : "—"}</strong>
-                        <span className="crm-dashboard-metric-detail !text-slate-600">{!rangeValid ? "Choose valid dates" : leadMetrics.total ? "Current status in this period" : "No data yet"}</span>
+                        <p>Legacy lead statuses</p><strong>{rangeValid ? leadMetrics.legacyStatuses : "—"}</strong>
+                        <span className="crm-dashboard-metric-detail !text-slate-600">Historical Won/Lost values; deal stages track sales</span>
                       </article>
                     </div>
                   </section>
@@ -662,14 +665,14 @@ const Dashboard = () => {
                   <div className="crm-dashboard-grid crm-dashboard-grid-secondary">
                     <section className="crm-dashboard-card" aria-labelledby="dashboard-pipeline-title">
                       <div className="crm-dashboard-card-heading">
-                        <div><h2 id="dashboard-pipeline-title">Current lead pipeline</h2><p>Current status across all {pipelineTotal} workspace leads</p></div>
+                        <div><h2 id="dashboard-pipeline-title">Current lead qualification</h2><p>Lead statuses across {pipelineTotal} records; historical Won/Lost lead values are legacy only.</p></div>
                         <button className="crm-text-link" type="button" onClick={() => navigate("/leads")}>View leads <MdArrowForward /></button>
                       </div>
                       {pipelineTotal ? (
                         <div className="space-y-3 px-5 pb-5">
                           {pipelineCounts.map((stage, index) => (
                             <div className="grid grid-cols-[minmax(75px,auto)_minmax(40px,1fr)_2rem] items-center gap-3 text-xs" key={stage.name}>
-                              <span className="font-semibold text-slate-700">{stage.name}</span>
+                              <span className="font-semibold text-slate-700">{["Won", "Lost"].includes(stage.name) ? `${stage.name} (legacy)` : stage.name}</span>
                               <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={`${stage.name} leads`} aria-valuemin="0" aria-valuemax={pipelineTotal} aria-valuenow={stage.count}>
                                 <span className={`block h-full rounded-full ${["bg-blue-600", "bg-sky-600", "bg-cyan-600", "bg-indigo-600", "bg-amber-500", "bg-emerald-600", "bg-rose-600"][index]}`} style={{ width: `${(stage.count / pipelineTotal) * 100}%` }} />
                               </div>

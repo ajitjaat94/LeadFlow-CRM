@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   MdAccountBalanceWallet,
   MdCalendarToday,
@@ -64,20 +65,58 @@ const dealPayload = (item) => ({
   notes: item.notes || "",
 });
 
-const DealForm = ({ deal, contacts, leads, relatedDataError, saving, error, onClose, onSave, onRetryRelatedData }) => {
+const DealForm = ({ deal, initialValues, contacts, leads, relatedDataError, saving, error, onClose, onSave, onRetryRelatedData }) => {
   const [form, setForm] = useState(() => {
-    const initial = deal ? { ...emptyDeal, ...dealPayload(deal) } : emptyDeal;
+    const initial = deal ? { ...emptyDeal, ...dealPayload(deal) } : { ...emptyDeal, ...initialValues };
     const probability = ["Won", "Lost"].includes(initial.stage) ? probabilities[initial.stage] : initial.probability;
     return { ...initial, value: String(initial.value ?? 0), probability: String(probability ?? 10) };
   });
+  const dialogRef = useRef(null);
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusableElements = dialogRef.current?.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusableElements?.length) return;
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus?.();
+    };
+  }, [onClose]);
 
   const change = (event) => {
     const { name, value } = event.target;
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-      ...(name === "stage" ? { probability: String(probabilities[value]) } : {}),
-    }));
+    setForm((current) => {
+      if (name !== "stage") return { ...current, [name]: value };
+      const currentStageHasManualProbability = !["Won", "Lost"].includes(current.stage)
+        && Number(current.probability) !== probabilities[current.stage];
+      const nextProbability = ["Won", "Lost"].includes(value)
+        ? probabilities[value]
+        : currentStageHasManualProbability
+          ? Number(current.probability)
+          : probabilities[value];
+      return { ...current, stage: value, probability: String(nextProbability) };
+    });
   };
   const submit = (event) => {
     event.preventDefault();
@@ -92,10 +131,11 @@ const DealForm = ({ deal, contacts, leads, relatedDataError, saving, error, onCl
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/45 p-3 sm:p-5" role="presentation" onMouseDown={onClose}>
-      <section className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="deal-form-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="deal-form-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4 sm:px-6">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">Sales pipeline</p>
           <h2 id="deal-form-title" className="mt-1 text-xl font-bold text-slate-900">{deal ? "Edit deal" : "Create deal"}</h2>
+          <p className="mt-1 text-sm text-slate-600">Deal: a specific sales opportunity with a value and expected close date. Each deal has its own sale outcome.</p>
         </div>
         <form onSubmit={submit} className="space-y-4 p-5 sm:p-6">
           <label className="block text-xs font-semibold text-slate-600">Deal name *
@@ -110,12 +150,13 @@ const DealForm = ({ deal, contacts, leads, relatedDataError, saving, error, onCl
                 <input id="deal-value" className={`${inputClass} mt-0 min-w-0`} name="value" value={form.value} onChange={change} type="number" min="0" step="0.01" required />
               </div>
             </div>
-            <label className="text-xs font-semibold text-slate-600">Pipeline stage
+            <label className="text-xs font-semibold text-slate-600">Deal stage
               <select className={inputClass} name="stage" value={form.stage} onChange={change}>{stages.map((stage) => <option key={stage}>{stage}</option>)}</select>
+              <span className="mt-1 block font-normal text-slate-500">Won or Lost closes this deal only; a lead or contact can have multiple deals.</span>
             </label>
             <label className="text-xs font-semibold text-slate-600">Win probability (%)
               <input className={inputClass} name="probability" value={form.probability} onChange={change} type="number" min="0" max="100" step="1" required disabled={["Won", "Lost"].includes(form.stage)} aria-describedby="deal-probability-help" />
-              <span id="deal-probability-help" className="mt-1 block font-normal text-slate-500">{form.stage === "Won" ? "Won deals always use 100%." : form.stage === "Lost" ? "Lost deals always use 0%." : "Enter a whole number from 0 to 100."}</span>
+              <span id="deal-probability-help" className="mt-1 block font-normal text-slate-500">{form.stage === "Won" ? "Won deals always use 100%." : form.stage === "Lost" ? "Lost deals always use 0%." : "Your estimated chance of winning this deal; used for the weighted forecast. Enter 0–100%."}</span>
             </label>
             <label className="text-xs font-semibold text-slate-600">Expected close date
               <input className={inputClass} name="expectedCloseDate" value={form.expectedCloseDate} onChange={change} type="date" />
@@ -139,7 +180,7 @@ const DealForm = ({ deal, contacts, leads, relatedDataError, saving, error, onCl
           </label>
           {error && <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">{error}</p>}
           <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
-            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button ref={closeButtonRef} type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
             <button type="submit" disabled={saving} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">{saving ? "Saving..." : deal ? "Save changes" : "Create deal"}</button>
           </div>
         </form>
@@ -158,6 +199,8 @@ const MetricCard = ({ label, value, detail, icon: Icon, tone }) => (
 );
 
 const Deals = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [deals, setDeals] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [leads, setLeads] = useState([]);
@@ -175,6 +218,12 @@ const Deals = () => {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
+  const saveInProgress = useRef(false);
+  const prefillHandled = useRef(false);
+  const closeDealForm = useCallback(() => {
+    setEditing(null);
+    setFormError("");
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -190,11 +239,30 @@ const Deals = () => {
         setLeads(leadResult.status === "fulfilled" ? leadResult.value : []);
         if (contactResult.status === "rejected" || leadResult.status === "rejected") {
           setRelatedDataError("Some linked contact or lead options could not be loaded. Retry to load them.");
+        } else {
+          setRelatedDataError("");
+          const leadId = location.state?.createDealForLeadId;
+          if (leadId && !prefillHandled.current) {
+            const relatedLead = leadResult.value.find((item) => String(item._id) === String(leadId));
+            if (!relatedLead) {
+              setError("The selected lead could not be found. Choose an existing lead to create a deal.");
+            } else {
+              const relatedContact = contactResult.value.find((item) => item.leadIds?.some((id) => String(id) === String(leadId)));
+              setEditing({
+                ...emptyDeal,
+                leadId: relatedLead._id,
+                contactId: relatedContact?._id || "",
+              });
+              setFormError("");
+            }
+            prefillHandled.current = true;
+            navigate("/deals", { replace: true, state: null });
+          }
         }
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [retryCount]);
+  }, [location.state?.createDealForLeadId, navigate, retryCount]);
 
   const currencyOptions = useMemo(() => [...new Set(deals.map((item) => item.currency || "INR"))].sort(), [deals]);
   const filteredDeals = useMemo(() => {
@@ -224,6 +292,8 @@ const Deals = () => {
   const overdueDeals = openDeals.filter((item) => item.expectedCloseDate && new Date(item.expectedCloseDate) < new Date(new Date().toDateString())).length;
 
   const save = async (values) => {
+    if (saveInProgress.current) return;
+    saveInProgress.current = true;
     setSaving(true);
     setFormError("");
     try {
@@ -240,20 +310,28 @@ const Deals = () => {
     } catch (requestError) {
       setFormError(requestError.response?.data?.message || "Unable to save this deal.");
     } finally {
+      saveInProgress.current = false;
       setSaving(false);
     }
   };
 
   const changeStage = async (item, stage) => {
     const previous = item;
+    const stageHasManualProbability = !["Won", "Lost"].includes(item.stage)
+      && Number(item.probability) !== probabilities[item.stage];
+    const probability = ["Won", "Lost"].includes(stage)
+      ? probabilities[stage]
+      : stageHasManualProbability
+        ? Number(item.probability)
+        : probabilities[stage];
     setDeals((current) => current.map((entry) => entry._id === item._id
-      ? { ...entry, stage, probability: probabilities[stage] }
+      ? { ...entry, stage, probability }
       : entry));
     try {
       const updated = await updateDeal(item._id, {
         ...dealPayload(item),
         stage,
-        probability: probabilities[stage],
+        probability,
       });
       setDeals((current) => current.map((entry) => entry._id === updated._id ? updated : entry));
     } catch (requestError) {
@@ -385,7 +463,7 @@ const Deals = () => {
           </section>
         </div>
       </main>
-      {editing && <DealForm key={editing._id || "new-deal"} deal={editing._id ? editing : null} contacts={contacts} leads={leads} relatedDataError={relatedDataError} saving={saving} error={formError} onClose={() => { setEditing(null); setFormError(""); }} onSave={save} onRetryRelatedData={retryLoad} />}
+      {editing && <DealForm key={editing._id || "new-deal"} deal={editing._id ? editing : null} initialValues={editing} contacts={contacts} leads={leads} relatedDataError={relatedDataError} saving={saving} error={formError} onClose={closeDealForm} onSave={save} onRetryRelatedData={retryLoad} />}
     </div>
   );
 };

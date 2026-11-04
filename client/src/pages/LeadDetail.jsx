@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { MdArrowBack, MdEdit, MdRefresh } from "react-icons/md";
+import { MdArrowBack, MdEdit, MdRefresh, MdAdd } from "react-icons/md";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import FollowUpCard from "../components/follow-ups/FollowUpCard";
-import { getLead, getLeadFields, getLeadFollowUps, getSettings } from "../services/api";
+import PhoneWhatsAppAction from "../components/PhoneWhatsAppAction";
+import { getLead, getLeadFields, getLeadFollowUps, getSettings, updateLead } from "../services/api";
 import { getBrowserTimeZone } from "../utils/followUpTime";
 
 const LeadDetail = () => {
@@ -70,6 +71,10 @@ const LeadDetail = () => {
     setDetailsError("");
     setRetry((count) => count + 1);
   };
+  const saveCorrectedPhone = async (phone) => {
+    const updated = await updateLead(id, { ...activeLead, phone });
+    setLead(updated);
+  };
 
   return (
     <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
@@ -97,12 +102,13 @@ const LeadDetail = () => {
             <>
               <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <span className="crm-eyebrow">Lead details · Read only</span>
+                  <span className="crm-eyebrow">Lead · An enquiry or potential customer being qualified</span>
                   <h1 className="mt-1 break-words text-2xl font-extrabold tracking-tight text-slate-900">{activeLead.name || "Unnamed lead"}</h1>
                   <p className="mt-1 text-sm text-slate-600">{activeLead.company || "No company"}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Link to="/leads" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MdArrowBack />Back to leads</Link>
+                  <button type="button" onClick={() => navigate("/deals", { state: { createDealForLeadId: id } })} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700"><MdAdd />Create deal</button>
                   <button type="button" onClick={() => navigate(`/lead/${id}/edit`)} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"><MdEdit />Edit lead</button>
                 </div>
               </header>
@@ -110,10 +116,10 @@ const LeadDetail = () => {
               {activeDetailsError && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert"><span>{activeDetailsError}</span><button type="button" onClick={retryLoad} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 font-semibold"><MdRefresh />Retry</button></div>}
 
               <section className="crm-panel overflow-hidden">
-                <div className="crm-panel-heading"><div><h2>Contact information</h2><p>Lead status: <span className="font-semibold text-slate-700">{activeLead.status || "Unknown"}</span></p></div></div>
+                <div className="crm-panel-heading"><div><h2>Lead information</h2><p>Qualification status: <span className="font-semibold text-slate-700">{["Won", "Lost"].includes(activeLead.status) ? `${activeLead.status} (legacy)` : activeLead.status || "Unknown"}</span>. Sales outcomes are recorded on deals; a lost deal does not mark this lead Lost.</p></div></div>
                 <dl className="grid gap-4 p-5 sm:grid-cols-2">
                   <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</dt><dd className="mt-1 break-all text-sm text-slate-800">{activeLead.email ? <a className="text-blue-700 hover:underline" href={`mailto:${activeLead.email}`}>{activeLead.email}</a> : "Not provided"}</dd></div>
-                  <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</dt><dd className="mt-1 text-sm text-slate-800">{activeLead.phone ? <a className="text-blue-700 hover:underline" href={`tel:${activeLead.phone}`}>{activeLead.phone}</a> : "Not provided"}</dd></div>
+                  <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</dt><dd className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-800">{activeLead.phone ? <><a className="text-blue-700 hover:underline" href={`tel:${activeLead.phone}`}>{activeLead.phone}</a><PhoneWhatsAppAction name={activeLead.name} phone={activeLead.phone} compact onSavePhone={saveCorrectedPhone} /></> : "Not provided"}</dd></div>
                 </dl>
               </section>
 

@@ -25,6 +25,7 @@ const errorMessage = (requestError, fallback) => (
 const FollowUps = () => {
   const [followUps, setFollowUps] = useState([]);
   const [leads, setLeads] = useState([]);
+  const [leadsLoading, setLeadsLoading] = useState(true);
   const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
   const [timeZoneError, setTimeZoneError] = useState("");
   const [filter, setFilter] = useState("All");
@@ -41,30 +42,40 @@ const FollowUps = () => {
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([getFollowUps(), getLeads(), getSettings()])
-      .then(([followUpResult, leadResult, settingsResult]) => {
+    getFollowUps()
+      .then((result) => {
         if (!active) return;
-        if (followUpResult.status === "rejected") {
-          setLoadError(errorMessage(followUpResult.reason, "Unable to load follow-ups."));
-          return;
-        }
-        setFollowUps(followUpResult.value);
-        if (leadResult.status === "fulfilled") {
-          setLeads(leadResult.value);
-        } else {
-          setLeadsError(errorMessage(leadResult.reason, "Unable to load leads for scheduling."));
-        }
-        if (settingsResult.status === "fulfilled") {
-          setTimeZone(settingsResult.value.workspace.timeZone || "Asia/Kolkata");
-          setTimeZoneError("");
-        } else {
-          const browserTimeZone = getBrowserTimeZone();
-          setTimeZone(browserTimeZone);
-          setTimeZoneError(`Workspace timezone is unavailable from the server. Overdue status is using your browser timezone (${browserTimeZone}).`);
+        setFollowUps(result);
+        setLoadError("");
+      })
+      .catch((requestError) => {
+        if (active) setLoadError(errorMessage(requestError, "Unable to load follow-ups."));
+      })
+      .finally(() => { if (active) setLoading(false); });
+    getLeads()
+      .then((result) => {
+        if (!active) return;
+        setLeads(result);
+        setLeadsError("");
+      })
+      .catch((requestError) => {
+        if (active) {
+          setLeads([]);
+          setLeadsError(errorMessage(requestError, "Unable to load leads for scheduling."));
         }
       })
-      .finally(() => {
-        if (active) setLoading(false);
+      .finally(() => { if (active) setLeadsLoading(false); });
+    getSettings()
+      .then((result) => {
+        if (!active) return;
+        setTimeZone(result.workspace.timeZone || "Asia/Kolkata");
+        setTimeZoneError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        const browserTimeZone = getBrowserTimeZone();
+        setTimeZone(browserTimeZone);
+        setTimeZoneError(`Workspace timezone is unavailable from the server. Overdue status is using your browser timezone (${browserTimeZone}).`);
       });
     return () => { active = false; };
   }, [retryCount]);
@@ -80,6 +91,7 @@ const FollowUps = () => {
 
   const retryLoad = () => {
     setLoading(true);
+    setLeadsLoading(true);
     setLoadError("");
     setLeadsError("");
     setTimeZoneError("");
@@ -228,11 +240,13 @@ const FollowUps = () => {
           key={editing?._id || "new-follow-up"}
           lead={editing?.leadId}
           leads={leads}
+          leadsLoading={leadsLoading}
           leadsError={leadsError}
           onRetryLeads={retryLoad}
           followUp={editing}
           onClose={() => { setEditing(null); setScheduling(false); }}
           onSaved={handleSaved}
+          timeZone={timeZone}
         />
       )}
     </div>

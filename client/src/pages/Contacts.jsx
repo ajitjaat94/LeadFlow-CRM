@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FaWhatsapp } from "react-icons/fa";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MdArchive,
   MdCall,
@@ -19,6 +18,8 @@ import * as XLSX from "xlsx";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import FollowUpModal from "../components/follow-ups/FollowUpModal";
+import PhoneWhatsAppAction from "../components/PhoneWhatsAppAction";
+import { formatFollowUpDate, getBrowserTimeZone, isFollowUpOverdue } from "../utils/followUpTime";
 import {
   archiveContact,
   createContact,
@@ -27,6 +28,7 @@ import {
   getContacts,
   getLeadFields,
   getLeads,
+  getSettings,
   linkContactLead,
   mergeContacts as mergeContact,
   mergeDuplicateContactDetails,
@@ -61,6 +63,15 @@ const fieldLabels = {
 const normalizeHeader = (value) => String(value ?? "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 const normalizeKey = (value) => normalizeHeader(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 const csvValue = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+const compareFollowUps = (first, second) => `${first.scheduledDate}T${first.scheduledTime}`.localeCompare(`${second.scheduledDate}T${second.scheduledTime}`);
+
+const getContactFollowUpSummary = (contactItem, timeZone) => {
+  const pending = contactItem.pendingFollowUps
+    || (contactItem.nextFollowUp ? [{ ...contactItem.nextFollowUp, status: "Pending" }] : []);
+  const overdue = pending.filter((item) => isFollowUpOverdue(item, timeZone)).sort(compareFollowUps);
+  const nextScheduled = pending.filter((item) => !isFollowUpOverdue(item, timeZone)).sort(compareFollowUps);
+  return { overdue, nextScheduled: nextScheduled[0] || null };
+};
 
 const downloadWorkbook = (rows, filename, type) => {
   const workbook = XLSX.utils.book_new();
@@ -76,6 +87,38 @@ const ContactForm = ({ contact, customFields, saving, error, duplicateMatches, o
     customFields: contact?.customFields || {},
   }));
   const [tagsText, setTagsText] = useState((contact?.tags || []).join(", "));
+  const dialogRef = useRef(null);
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusableElements = dialogRef.current?.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusableElements?.length) return;
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus?.();
+    };
+  }, [onClose]);
 
   const updateField = (event) => {
     const { name, value } = event.target;
@@ -94,15 +137,15 @@ const ContactForm = ({ contact, customFields, saving, error, duplicateMatches, o
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/40 p-3 sm:p-5" role="presentation" onMouseDown={onClose}>
-      <section className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="contact-form-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="contact-form-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">Contact directory</p>
               <h2 id="contact-form-title" className="mt-1 text-xl font-bold text-slate-900">{contact?._id ? "Edit contact" : "Add contact"}</h2>
-              <p className="mt-1 text-xs text-slate-500">A person can stay connected to several sales opportunities.</p>
+              <p className="mt-1 text-xs text-slate-500">Contact: a person whose details can be reused across opportunities.</p>
             </div>
-            <button type="button" className="rounded-lg px-2 py-1 text-2xl leading-none text-slate-400 hover:bg-white hover:text-slate-700" onClick={onClose} aria-label="Close">&times;</button>
+            <button ref={closeButtonRef} type="button" className="rounded-lg px-2 py-1 text-2xl leading-none text-slate-400 hover:bg-white hover:text-slate-700" onClick={onClose} aria-label="Close">&times;</button>
           </div>
         </div>
         <form onSubmit={submit} className="space-y-4 p-5 sm:p-6">
@@ -156,6 +199,8 @@ const ContactForm = ({ contact, customFields, saving, error, duplicateMatches, o
 const Contacts = () => {
   const [contacts, setContacts] = useState([]);
   const [leads, setLeads] = useState([]);
+  const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
+  const [timeZoneError, setTimeZoneError] = useState("");
   const [customFields, setCustomFields] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
@@ -179,10 +224,11 @@ const Contacts = () => {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
 
   const loadData = async (archived = showArchived) => {
-    const [contactResult, leadResult, fieldsResult] = await Promise.allSettled([
+    const [contactResult, leadResult, fieldsResult, settingsResult] = await Promise.allSettled([
       getContacts(archived),
       getLeads(),
       getLeadFields(),
+      getSettings(),
     ]);
 
     if (contactResult.status === "fulfilled" && Array.isArray(contactResult.value)) {
@@ -205,6 +251,14 @@ const Contacts = () => {
       setCustomFields([]);
       relatedErrors.push("Custom contact fields are unavailable.");
     }
+    if (settingsResult.status === "fulfilled") {
+      setTimeZone(settingsResult.value.workspace.timeZone || "Asia/Kolkata");
+      setTimeZoneError("");
+    } else {
+      const browserTimeZone = getBrowserTimeZone();
+      setTimeZone(browserTimeZone);
+      setTimeZoneError(`Workspace timezone is unavailable; follow-up dates use your browser timezone (${browserTimeZone}).`);
+    }
     setRelatedDataError(relatedErrors.join(" "));
     if (contactResult.status === "fulfilled") setError("");
     setLoading(false);
@@ -212,8 +266,8 @@ const Contacts = () => {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([getContacts(showArchived), getLeads(), getLeadFields()])
-      .then(([contactResult, leadResult, fieldsResult]) => {
+    Promise.allSettled([getContacts(showArchived), getLeads(), getLeadFields(), getSettings()])
+      .then(([contactResult, leadResult, fieldsResult, settingsResult]) => {
         if (cancelled) return;
         if (contactResult.status === "fulfilled" && Array.isArray(contactResult.value)) {
           setContacts(contactResult.value);
@@ -233,6 +287,14 @@ const Contacts = () => {
         else {
           setCustomFields([]);
           relatedErrors.push("Custom contact fields are unavailable.");
+        }
+        if (settingsResult.status === "fulfilled") {
+          setTimeZone(settingsResult.value.workspace.timeZone || "Asia/Kolkata");
+          setTimeZoneError("");
+        } else {
+          const browserTimeZone = getBrowserTimeZone();
+          setTimeZone(browserTimeZone);
+          setTimeZoneError(`Workspace timezone is unavailable; follow-up dates use your browser timezone (${browserTimeZone}).`);
         }
         setRelatedDataError(relatedErrors.join(" "));
       })
@@ -305,7 +367,19 @@ const Contacts = () => {
     }
   };
 
+  const saveCorrectedContactPhone = async (item, phone) => {
+    const saved = await updateContact(item._id, { ...item, phone });
+    setContacts((current) => current.map((contact) => contact._id === saved._id ? { ...contact, ...saved } : contact));
+    setSelectedContact((current) => current?._id === saved._id ? { ...current, ...saved } : current);
+    setNotice("Phone number updated with the confirmed international country code.");
+  };
+
   const [duplicateMatches, setDuplicateMatches] = useState([]);
+  const closeContactForm = useCallback(() => {
+    setFormContact(null);
+    setDuplicateMatches([]);
+    setError("");
+  }, []);
   const startEditing = (item) => {
     setError("");
     setDuplicateMatches([]);
@@ -522,6 +596,7 @@ const Contacts = () => {
                 <span className="rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-bold text-blue-700">{loading ? "Loading" : loadError ? "Unavailable" : `${filteredContacts.length} matching / ${contacts.length} ${showArchived ? "archived" : "contacts"}`}</span>
               </div>
               <p className="mt-1 text-sm text-slate-600">People stay connected to your business, even when an opportunity is won or lost.</p>
+              <p className="mt-1 text-xs text-slate-500">Contact: a reusable person record that can be linked to multiple leads and deals.</p>
             </div>
             <div className="relative mt-4 flex flex-wrap gap-2 sm:mt-0">
               <input ref={fileInputRef} className="hidden" type="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importFile} />
@@ -534,6 +609,7 @@ const Contacts = () => {
 
           {loadError && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert"><span>{loadError}</span><button type="button" onClick={retryLoad} disabled={loading} className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 font-semibold hover:bg-rose-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">{loading ? "Retrying..." : "Retry"}</button></div>}
           {relatedDataError && !loadError && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert"><span>{relatedDataError} Some contact actions may be unavailable.</span><button type="button" onClick={retryLoad} disabled={loading} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold hover:bg-amber-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">{loading ? "Retrying..." : "Retry"}</button></div>}
+          {timeZoneError && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">{timeZoneError}</p>}
 
           {(error || notice) && (
             <div className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-100 bg-rose-50 text-rose-700" : "border-emerald-100 bg-emerald-50 text-emerald-800"}`} role={error ? "alert" : "status"}>
@@ -600,11 +676,21 @@ const Contacts = () => {
                           <td className="px-4 py-3.5 text-sm text-slate-600">{item.company || "—"}</td>
                           <td className="px-4 py-3.5"><span className="block text-xs text-slate-700">{item.phone || "No phone"}</span><span className="mt-1 block max-w-[190px] truncate text-[11px] text-slate-500">{item.email || "No email"}</span></td>
                           <td className="px-4 py-3.5 text-xs text-slate-600">{item.owner?.username || item.owner?.email || "You"}</td>
-                          <td className="px-4 py-3.5 text-xs text-slate-600">{item.nextFollowUp ? <><span className="block font-semibold text-slate-700">{item.nextFollowUp.type}</span><span>{item.nextFollowUp.scheduledDate} · {item.nextFollowUp.scheduledTime}</span></> : "None scheduled"}</td>
+                          <td className="px-4 py-3.5 text-xs text-slate-600">
+                            {(() => {
+                              const summary = getContactFollowUpSummary(item, timeZone);
+                              return summary.overdue.length || summary.nextScheduled ? (
+                                <div className="space-y-2">
+                                  {summary.overdue.length > 0 && <div><span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 font-bold text-rose-800">Overdue{summary.overdue.length > 1 ? ` · ${summary.overdue.length}` : ""}</span><span className="mt-1 block font-semibold text-slate-700">{summary.overdue[0].type}</span><span>{formatFollowUpDate(summary.overdue[0].scheduledDate)} · {summary.overdue[0].scheduledTime} ({timeZone})</span></div>}
+                                  {summary.nextScheduled && <div><span className="block font-semibold text-blue-700">Next scheduled</span><span className="block text-slate-700">{summary.nextScheduled.type}</span><span>{formatFollowUpDate(summary.nextScheduled.scheduledDate)} · {summary.nextScheduled.scheduledTime} ({timeZone})</span></div>}
+                                </div>
+                              ) : "None pending";
+                            })()}
+                          </td>
                           <td className="px-5 py-3.5">
                             <div className="flex justify-end gap-1">
                               {item.phone && <a className="grid h-8 w-8 place-items-center rounded-lg text-emerald-700 hover:bg-emerald-50" href={`tel:${item.phone}`} aria-label={`Call ${item.name}`} title="Call"><MdCall /></a>}
-                              {item.phone && <a className="grid h-8 w-8 place-items-center rounded-lg text-green-700 hover:bg-green-50" href={`https://wa.me/${item.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" aria-label={`WhatsApp ${item.name}`} title="WhatsApp"><FaWhatsapp /></a>}
+                              {item.phone && <PhoneWhatsAppAction name={item.name} phone={item.phone} compact onSavePhone={(phone) => saveCorrectedContactPhone(item, phone)} />}
                               {item.email && <a className="grid h-8 w-8 place-items-center rounded-lg text-blue-700 hover:bg-blue-50" href={`mailto:${item.email}`} aria-label={`Email ${item.name}`} title="Email"><MdEmail /></a>}
                               <button type="button" onClick={() => openDetails(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={`Open ${item.name}`} title="View"><MdLink /></button>
                               <button type="button" onClick={() => startEditing(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={`Edit ${item.name}`} title="Edit"><MdEdit /></button>
@@ -628,7 +714,7 @@ const Contacts = () => {
           saving={saving}
           error={error}
           duplicateMatches={duplicateMatches}
-          onClose={() => { setFormContact(null); setDuplicateMatches([]); setError(""); }}
+          onClose={closeContactForm}
           onSave={saveContact}
           onMergeDuplicate={mergeDuplicate}
         />
@@ -647,7 +733,7 @@ const Contacts = () => {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {selectedContact.phone && <a className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700" href={`tel:${selectedContact.phone}`}><MdCall />Call</a>}
-                {selectedContact.phone && <a className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-white px-3 py-2 text-xs font-semibold text-green-700" href={`https://wa.me/${selectedContact.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"><FaWhatsapp />WhatsApp</a>}
+                {selectedContact.phone && <PhoneWhatsAppAction name={selectedContact.name} phone={selectedContact.phone} onSavePhone={(phone) => saveCorrectedContactPhone(selectedContact, phone)} />}
                 {selectedContact.email && <a className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700" href={`mailto:${selectedContact.email}`}><MdEmail />Email</a>}
                 <button type="button" onClick={() => startEditing(selectedContact)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"><MdEdit />Edit</button>
                 <button type="button" onClick={() => handleArchive(selectedContact)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700">{showArchived ? <MdUnarchive /> : <MdArchive />}{showArchived ? "Restore" : "Archive"}</button>
@@ -667,9 +753,9 @@ const Contacts = () => {
               </section>
 
               <section className="rounded-2xl border border-slate-200">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><h3 className="text-sm font-bold text-slate-900">Linked leads</h3><p className="mt-0.5 text-xs text-slate-500">Won or lost leads remain linked to this person.</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">{selectedContact.linkedLeads?.length || 0}</span></div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><h3 className="text-sm font-bold text-slate-900">Linked leads</h3><p className="mt-0.5 text-xs text-slate-500">Lead status tracks qualification; deal outcomes stay on their individual deals.</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">{selectedContact.linkedLeads?.length || 0}</span></div>
                 {selectedContact.loadingDetails ? <p className="p-4 text-xs text-slate-500">Loading linked records...</p> : (selectedContact.linkedLeads || []).length === 0 ? <p className="p-4 text-xs text-slate-500">No linked leads. Link an existing lead below.</p> : (
-                  <div className="divide-y divide-slate-100">{selectedContact.linkedLeads.map((lead) => <div key={lead._id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{lead.name}</p><p className="text-xs text-slate-500">{lead.company} · <span className="font-semibold">{lead.status}</span></p></div><div className="flex items-center gap-2"><button type="button" onClick={() => { setLinkLeadId(""); setFollowUpLead(lead); }} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-2 text-xs font-semibold text-blue-700"><MdEvent />Follow-up</button><button type="button" onClick={() => handleUnlinkLead(lead._id)} className="text-xs font-semibold text-slate-500 hover:text-rose-600">Unlink</button></div></div>)}</div>
+                  <div className="divide-y divide-slate-100">{selectedContact.linkedLeads.map((lead) => <div key={lead._id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{lead.name}</p><p className="text-xs text-slate-500">{lead.company} · <span className="font-semibold">{["Won", "Lost"].includes(lead.status) ? `${lead.status} (legacy)` : lead.status}</span></p></div><div className="flex items-center gap-2"><button type="button" onClick={() => { setLinkLeadId(""); setFollowUpLead(lead); }} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-2 text-xs font-semibold text-blue-700"><MdEvent />Follow-up</button><button type="button" onClick={() => handleUnlinkLead(lead._id)} className="text-xs font-semibold text-slate-500 hover:text-rose-600">Unlink</button></div></div>)}</div>
                 )}
                 <div className="flex flex-col gap-2 border-t border-slate-100 p-3 sm:flex-row">
                   <select className={`${inputBase} min-w-0 flex-1`} value={linkLeadId} onChange={(event) => setLinkLeadId(event.target.value)} aria-label="Choose existing lead to link"><option value="">Choose an existing lead</option>{availableLeads.map((lead) => <option key={lead._id} value={lead._id}>{lead.name} · {lead.company}</option>)}</select>
@@ -680,7 +766,7 @@ const Contacts = () => {
               <section className="rounded-2xl border border-slate-200">
                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><h3 className="text-sm font-bold text-slate-900">Follow-ups & activity</h3><p className="mt-0.5 text-xs text-slate-500">Scheduled activity from linked leads and contact history.</p></div></div>
                 <div className="divide-y divide-slate-100">
-                  {[...(selectedContact.followUps || []).map((item) => ({ ...item, activityType: "follow-up", activityDate: `${item.scheduledDate}T${item.scheduledTime || "00:00"}`, detail: `${item.type} · ${item.status}${item.note ? ` · ${item.note}` : ""}` })), ...(selectedContact.activities || []).map((item) => ({ ...item, activityType: item.type, activityDate: item.createdAt, detail: item.description }))].sort((a, b) => new Date(b.activityDate || b.createdAt || 0) - new Date(a.activityDate || a.createdAt || 0)).map((item, index) => <div key={`${item.activityType}-${item._id || item.createdAt}-${index}`} className="flex gap-3 px-4 py-3"><span className={`mt-1.5 h-2 w-2 flex-none rounded-full ${item.activityType === "follow-up" ? "bg-blue-500" : "bg-violet-500"}`} /><div><p className="text-xs font-semibold text-slate-700">{item.detail}</p><p className="mt-0.5 text-[10px] text-slate-400">{new Date(item.activityDate || item.createdAt).toLocaleString()}</p></div></div>)}
+                  {[...(selectedContact.followUps || []).map((item) => ({ ...item, activityType: "follow-up", activityDate: `${item.scheduledDate}T${item.scheduledTime || "00:00"}`, detail: `${item.type} · ${item.status}${item.note ? ` · ${item.note}` : ""}` })), ...(selectedContact.activities || []).map((item) => ({ ...item, activityType: item.type, activityDate: item.createdAt, detail: item.description }))].sort((a, b) => new Date(b.activityDate || b.createdAt || 0) - new Date(a.activityDate || a.createdAt || 0)).map((item, index) => <div key={`${item.activityType}-${item._id || item.createdAt}-${index}`} className="flex gap-3 px-4 py-3"><span className={`mt-1.5 h-2 w-2 flex-none rounded-full ${item.activityType === "follow-up" ? "bg-blue-500" : "bg-violet-500"}`} /><div><p className="text-xs font-semibold text-slate-700">{item.detail}</p><p className="mt-0.5 text-[10px] text-slate-400">{item.activityType === "follow-up" ? `${formatFollowUpDate(item.scheduledDate)} · ${item.scheduledTime || "00:00"} (${timeZone})` : new Date(item.activityDate || item.createdAt).toLocaleString()}</p></div></div>)}
                   {(selectedContact.followUps || []).length === 0 && (selectedContact.activities || []).length === 0 && <p className="p-4 text-xs text-slate-500">No activity recorded yet.</p>}
                 </div>
               </section>
@@ -698,7 +784,7 @@ const Contacts = () => {
         </div>
       )}
 
-      {followUpLead && <FollowUpModal lead={followUpLead} onClose={() => setFollowUpLead(null)} onSaved={() => { setFollowUpLead(null); setNotice("Follow-up scheduled."); openDetails(selectedContact); }} />}
+      {followUpLead && <FollowUpModal lead={followUpLead} timeZone={timeZone} onClose={() => setFollowUpLead(null)} onSaved={() => { setFollowUpLead(null); setNotice("Follow-up scheduled."); openDetails(selectedContact); }} />}
     </div>
   );
 };

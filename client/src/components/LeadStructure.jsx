@@ -7,6 +7,7 @@ import { createLeadField } from "../services/api";
 
 const LeadStructure = ({ formData, handleChange, loading, customFields = [], onCustomFieldsChange, onCustomFieldValuesChange }) => {
   const [addFieldOpen, setAddFieldOpen] = useState(false);
+  const activeStatuses = ["New", "Contacted", "Qualified", "Proposal", "Negotiation"];
 
   const handleAddField = async (field) => {
     const savedField = await createLeadField(field);
@@ -81,7 +82,22 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
 
       <div className="lead-form-grid">
         <div className="lead-form-field">
-          <label htmlFor="lead-status" className="mb-2 block text-sm font-semibold text-slate-700">Status</label>
+          <label htmlFor="lead-source" className="mb-2 block text-sm font-semibold text-slate-700">Source</label>
+          <Input
+            id="lead-source"
+            type="text"
+            name="source"
+            value={formData.source || ""}
+            onChange={handleChange}
+            placeholder="e.g. Website, referral, event"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-purple-400"
+          />
+        </div>
+      </div>
+
+      <div className="lead-form-grid">
+        <div className="lead-form-field">
+          <label htmlFor="lead-status" className="mb-2 block text-sm font-semibold text-slate-700">Qualification status</label>
           <select
             id="lead-status"
             name="status"
@@ -94,9 +110,10 @@ const LeadStructure = ({ formData, handleChange, loading, customFields = [], onC
             <option value="Qualified">Qualified</option>
             <option value="Proposal">Proposal</option>
             <option value="Negotiation">Negotiation</option>
-            <option value="Won">Won</option>
-            <option value="Lost">Lost</option>
+            {!activeStatuses.includes(formData.status) && <option value={formData.status}>{formData.status} (legacy lead status)</option>}
+            {activeStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
+          <p className="mt-1.5 text-xs text-slate-500">A lead tracks qualification. Record Won or Lost as the outcome of an individual deal.</p>
         </div>
 
         <div className="lead-form-field">

@@ -1,20 +1,28 @@
 import { useEffect, useState } from "react";
 import LeadStructure from "../components/LeadStructure";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { cancelFollowUp, completeFollowUp, createLead, getLead, getLeadFollowUps, updateLead } from "../services/api";
+import { cancelFollowUp, completeFollowUp, createLead, getLead, getLeadFollowUps, getSettings, updateLead } from "../services/api";
 import { getLeadFields } from "../services/api";
 import FollowUpCard from "../components/follow-ups/FollowUpCard";
 import FollowUpModal from "../components/follow-ups/FollowUpModal";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
+import { getBrowserTimeZone } from "../utils/followUpTime";
 
 const emptyLead = {
   name: "",
   company: "",
   email: "",
   phone: "",
+  source: "",
   status: "New",
   notes: "",
+};
+const getSavedLeadSource = (leadData) => {
+  const fields = leadData.customFields instanceof Map ? Object.fromEntries(leadData.customFields) : leadData.customFields || {};
+  const legacySource = Object.entries(fields)
+    .find(([key]) => ["source", "lead_source"].includes(key.trim().toLowerCase().replace(/[\s-]+/g, "_")))?.[1];
+  return String(leadData.source || legacySource || "").trim();
 };
 
 const getCalendarReturnTo = (value) => {
@@ -33,6 +41,7 @@ const LeadForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
+  const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
   const [customFields, setCustomFields] = useState([]);
   const [formData, setFormData] = useState({ ...emptyLead, customFields: {} });
   const [loading, setLoading] = useState(false);
@@ -57,9 +66,15 @@ const LeadForm = () => {
   }, []);
 
   useEffect(() => {
+    getSettings()
+      .then((settings) => setTimeZone(settings.workspace.timeZone || "Asia/Kolkata"))
+      .catch(() => setError(`Workspace timezone is unavailable; follow-up dates use your browser timezone (${getBrowserTimeZone()}).`));
+  }, []);
+
+  useEffect(() => {
     if (!id) return;
     getLead(id)
-      .then((leadData) => setFormData({ ...leadData, customFields: leadData.customFields || {} }))
+      .then((leadData) => setFormData({ ...leadData, source: getSavedLeadSource(leadData), customFields: leadData.customFields || {} }))
       .catch(() => setError("Unable to load this lead."))
       .finally(() => setLoadingLead(false));
     getLeadFollowUps(id).then(setFollowUps).catch(() => setError("Unable to load follow-ups."));
@@ -131,7 +146,7 @@ const LeadForm = () => {
             <div>
               <span className="crm-dashboard-eyebrow">Lead management</span>
               <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">{id ? "Edit lead" : "Add a new lead"}</h1>
-              <p className="mt-1 text-sm text-slate-600">{id ? "Update the details and keep this opportunity moving." : "Capture the important details and keep your pipeline moving."}</p>
+              <p className="mt-1 text-sm text-slate-600">{id ? "Update the details and keep this opportunity moving." : "Lead: an enquiry or potential customer being qualified."}</p>
             </div>
             <button className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" type="button" onClick={() => navigate("/leads")}>Back to leads</button>
           </header>
@@ -146,7 +161,7 @@ const LeadForm = () => {
           {id && <section className="crm-panel lead-detail-followups"><div className="crm-panel-heading"><div><h2>Follow-ups</h2><p>Scheduled activity for this lead</p></div><button className="crm-add-button" type="button" onClick={() => setFollowUpModalOpen(true)}>+ Schedule follow-up</button></div>{followUps.length === 0 ? <p className="follow-up-empty">No follow-ups scheduled.</p> : <div className="follow-up-list">{followUps.map((item) => <FollowUpCard key={item._id} item={item} onComplete={handleCompleteFollowUp} onEdit={(followUp) => { setEditingFollowUp(followUp); setFollowUpModalOpen(true); }} onCancel={handleCancelFollowUp} />)}</div>}</section>}
         </div>
       </main>
-      {followUpModalOpen && <FollowUpModal lead={formData} followUp={editingFollowUp} onClose={() => { setFollowUpModalOpen(false); setEditingFollowUp(null); }} onSaved={handleFollowUpSaved} />}
+      {followUpModalOpen && <FollowUpModal lead={formData} followUp={editingFollowUp} timeZone={timeZone} onClose={() => { setFollowUpModalOpen(false); setEditingFollowUp(null); }} onSaved={handleFollowUpSaved} />}
     </div>
   );
 };

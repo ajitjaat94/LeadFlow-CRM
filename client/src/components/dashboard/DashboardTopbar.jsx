@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   MdAdd,
+  MdClose,
   MdKeyboardArrowDown,
   MdMenu,
   MdNotificationsNone,
@@ -44,6 +45,7 @@ const DashboardTopbar = ({
   const navigate = useNavigate();
   const [authModalOpen, setAuthModalOpen] = useState(authRequired);
   const [globalSearch, setGlobalSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [workspaceResults, setWorkspaceResults] = useState({ query: "", loading: false, leads: [], contacts: [], deals: [], error: "" });
   const [searchRetryCount, setSearchRetryCount] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -110,12 +112,12 @@ const DashboardTopbar = ({
   }, [globalSearch, searchRetryCount, user]);
 
   useEffect(() => {
-    if (globalSearch.trim().length < 2) return undefined;
+    if (!searchOpen || globalSearch.trim().length < 2) return undefined;
     const closeOnEscape = (event) => {
-      if (event.key === "Escape") setGlobalSearch("");
+      if (event.key === "Escape") setSearchOpen(false);
     };
     const closeOnOutsideClick = (event) => {
-      if (!searchPanelRef.current?.contains(event.target)) setGlobalSearch("");
+      if (!searchPanelRef.current?.contains(event.target)) setSearchOpen(false);
     };
     document.addEventListener("mousedown", closeOnOutsideClick);
     window.addEventListener("keydown", closeOnEscape);
@@ -123,7 +125,7 @@ const DashboardTopbar = ({
       document.removeEventListener("mousedown", closeOnOutsideClick);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [globalSearch]);
+  }, [globalSearch, searchOpen]);
 
   useEffect(() => {
     if (hideSearch) return undefined;
@@ -247,6 +249,7 @@ const DashboardTopbar = ({
         ? { editDealId: record._id }
         : undefined;
     setGlobalSearch("");
+    setSearchOpen(false);
     navigate(path, { state });
   };
 
@@ -254,7 +257,7 @@ const DashboardTopbar = ({
     + workspaceResults.contacts.length
     + workspaceResults.deals.length > 0;
   const normalizedGlobalSearch = globalSearch.trim().toLocaleLowerCase();
-  const showWorkspaceSearch = Boolean(user && globalSearch.trim().length >= 2);
+  const showWorkspaceSearch = Boolean(user && searchOpen && globalSearch.trim().length >= 2);
 
   return (
     <>
@@ -277,13 +280,33 @@ const DashboardTopbar = ({
             <input
               ref={searchInputRef}
               value={globalSearch}
-              onChange={(event) => setGlobalSearch(event.target.value)}
+              onChange={(event) => {
+                setGlobalSearch(event.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => {
+                if (globalSearch.trim().length >= 2) setSearchOpen(true);
+              }}
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder.replace("…", "").replace("...", "")}
               aria-expanded={showWorkspaceSearch}
               aria-controls="workspace-search-results"
               aria-autocomplete="list"
             />
+            {globalSearch && (
+              <button
+                type="button"
+                className="crm-global-search-clear"
+                aria-label="Clear workspace search"
+                onClick={() => {
+                  setGlobalSearch("");
+                  setSearchOpen(false);
+                  searchInputRef.current?.focus();
+                }}
+              >
+                <MdClose size={16} />
+              </button>
+            )}
             <kbd>Ctrl K</kbd>
             </div>
             {showWorkspaceSearch && (

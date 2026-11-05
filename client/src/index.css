@@ -56,6 +56,8 @@ button { cursor: pointer; }
 .crm-search-wrap { display: flex; width: min(440px,100%); align-items: center; gap: 9px; border: 1px solid #e5eaf2; border-radius: 9px; background: #f8faff; color: #9aa6b8; padding: 8px 11px; }
 .crm-search-wrap input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: #25344c; font-size: 12px; }
 .crm-search-wrap input::placeholder { color: #9ba6b6; }
+.crm-global-search-clear { display:grid; height:22px; width:22px; flex:none; place-items:center; border:0; border-radius:5px; background:transparent; color:#7b8798; }
+.crm-global-search-clear:hover,.crm-global-search-clear:focus-visible { background:#e9eef7; color:#334155; outline:2px solid #93c5fd; outline-offset:1px; }
 .crm-search-wrap kbd { border: 1px solid #e2e7ee; border-radius: 4px; color: #a0aaba; font-size: 9px; padding: 3px 5px; }
 .crm-search-container { position: relative; width: min(440px,100%); flex: 1 1 300px; }
 .crm-search-container .crm-search-wrap { width: 100%; }

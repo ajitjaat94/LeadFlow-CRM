@@ -8,7 +8,7 @@ import {
   MdSearch,
 } from "react-icons/md";
 import AuthModal from "../AuthModal";
-import { getFollowUps, getSettings } from "../../services/api";
+import { getContacts, getDeals, getFollowUps, getLeads, getSettings } from "../../services/api";
 import { formatFollowUpDate, getBrowserTimeZone, isFollowUpOverdue } from "../../utils/followUpTime";
 
 const getInternalReturnPath = (value) => {
@@ -23,6 +23,10 @@ const getInternalReturnPath = (value) => {
     return "/dashboard";
   }
 };
+
+const normalizeSearchText = (value) => String(value ?? "").toLocaleLowerCase();
+const matchesSearch = (record, query, fields) => fields
+  .some((field) => normalizeSearchText(field).includes(query));
 
 const DashboardTopbar = ({
   searchTerm,
@@ -41,6 +45,9 @@ const DashboardTopbar = ({
 }) => {
   const navigate = useNavigate();
   const [authModalOpen, setAuthModalOpen] = useState(authRequired);
+  const globalSearch = searchTerm || "";
+  const [workspaceResults, setWorkspaceResults] = useState({ query: "", loading: false, leads: [], contacts: [], deals: [], error: "" });
+  const [searchRetryCount, setSearchRetryCount] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -56,8 +63,69 @@ const DashboardTopbar = ({
     }
   });
   const searchInputRef = useRef(null);
+  const searchPanelRef = useRef(null);
   const notificationsButtonRef = useRef(null);
   const notificationsPanelRef = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    const query = globalSearch.trim().toLocaleLowerCase();
+    const timer = window.setTimeout(() => {
+      if (!user || query.length < 2) {
+        setWorkspaceResults({ query, loading: false, leads: [], contacts: [], deals: [], error: "" });
+        return;
+      }
+      setWorkspaceResults({ query, loading: true, leads: [], contacts: [], deals: [], error: "" });
+      Promise.allSettled([getLeads(), getContacts(), getDeals()]).then((results) => {
+        if (!active) return;
+        const [leadResult, contactResult, dealResult] = results;
+        const leads = leadResult.status === "fulfilled" && Array.isArray(leadResult.value)
+          ? leadResult.value.filter((item) => matchesSearch(item, query, [item.name, item.company, item.email, item.phone]))
+          : [];
+        const contacts = contactResult.status === "fulfilled" && Array.isArray(contactResult.value)
+          ? contactResult.value.filter((item) => matchesSearch(item, query, [item.name, item.company, item.email, item.phone]))
+          : [];
+        const deals = dealResult.status === "fulfilled" && Array.isArray(dealResult.value)
+          ? dealResult.value.filter((item) => matchesSearch(item, query, [
+            item.name,
+            item.company,
+            item.contact?.name,
+            item.lead?.name,
+          ]))
+          : [];
+        const failedRequests = results.filter((result) => result.status === "rejected").length;
+        setWorkspaceResults({
+          query,
+          loading: false,
+          leads: leads.slice(0, 5),
+          contacts: contacts.slice(0, 5),
+          deals: deals.slice(0, 5),
+          error: failedRequests ? "Some record types could not be searched. Try again." : "",
+        });
+      });
+    }, globalSearch.trim().length >= 2 ? 250 : 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [globalSearch, searchRetryCount, user]);
+
+  useEffect(() => {
+    if (globalSearch.trim().length < 2) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") onSearchChange?.("");
+    };
+    const closeOnOutsideClick = (event) => {
+      if (!searchPanelRef.current?.contains(event.target)) onSearchChange?.("");
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [globalSearch, onSearchChange]);
 
   useEffect(() => {
     if (hideSearch) return undefined;
@@ -173,6 +241,23 @@ const DashboardTopbar = ({
     setNotificationsOpen((open) => !open);
   };
 
+  const openWorkspaceResult = (type, record) => {
+    const path = type === "lead" ? `/lead/${record._id}` : type === "contact" ? "/contacts" : "/deals";
+    const state = type === "contact"
+      ? { openContactId: record._id }
+      : type === "deal"
+        ? { editDealId: record._id }
+        : undefined;
+    onSearchChange?.("");
+    navigate(path, { state });
+  };
+
+  const hasWorkspaceResults = workspaceResults.leads.length
+    + workspaceResults.contacts.length
+    + workspaceResults.deals.length > 0;
+  const normalizedGlobalSearch = globalSearch.trim().toLocaleLowerCase();
+  const showWorkspaceSearch = Boolean(user && globalSearch.trim().length >= 2);
+
   return (
     <>
       <header className="crm-topbar">
@@ -188,16 +273,58 @@ const DashboardTopbar = ({
         </button>
         )}
         {!hideSearch && (
-          <div className="crm-search-wrap">
+          <div className="crm-search-container" ref={searchPanelRef}>
+            <div className="crm-search-wrap">
             <MdSearch size={20} />
             <input
               ref={searchInputRef}
-              value={searchTerm}
-              onChange={(event) => onSearchChange(event.target.value)}
+              value={searchTerm || ""}
+              onChange={(event) => {
+                onSearchChange?.(event.target.value);
+              }}
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder.replace("…", "").replace("...", "")}
+              aria-expanded={showWorkspaceSearch}
+              aria-controls="workspace-search-results"
+              aria-autocomplete="list"
             />
             <kbd>Ctrl K</kbd>
+            </div>
+            {showWorkspaceSearch && (
+              <section id="workspace-search-results" className="crm-workspace-search-results" role="listbox" aria-label="Workspace search results">
+                {workspaceResults.query !== normalizedGlobalSearch || workspaceResults.loading ? <p className="crm-workspace-search-state" role="status">Searching workspace...</p>
+                  : workspaceResults.error && !hasWorkspaceResults ? <div className="crm-workspace-search-state" role="alert"><p>{workspaceResults.error}</p><button type="button" onClick={() => setSearchRetryCount((count) => count + 1)}>Retry</button></div>
+                    : (
+                      <>
+                        {workspaceResults.error && <p className="crm-workspace-search-warning" role="status">{workspaceResults.error}</p>}
+                        {[
+                          ["Leads", "lead", workspaceResults.leads],
+                          ["Contacts", "contact", workspaceResults.contacts],
+                          ["Deals", "deal", workspaceResults.deals],
+                        ].map(([label, type, records]) => records.length > 0 && (
+                          <div key={label} className="crm-workspace-search-group">
+                            <h2>{label}</h2>
+                            {records.map((record) => (
+                              <button
+                                key={record._id}
+                                type="button"
+                                role="option"
+                                aria-selected="false"
+                                onClick={() => openWorkspaceResult(type, record)}
+                              >
+                                <span>{record.name}</span>
+                                <small>{type === "deal"
+                                  ? [record.contact?.name || record.lead?.name, record.stage].filter(Boolean).join(" · ") || "Deal"
+                                  : [record.company, record.email || record.phone].filter(Boolean).join(" · ") || (type === "lead" ? "Lead" : "Contact")}</small>
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                        {!hasWorkspaceResults && !workspaceResults.error && <p className="crm-workspace-search-state">No matching leads, contacts, or deals.</p>}
+                      </>
+                    )}
+              </section>
+            )}
           </div>
         )}
         <div className="crm-topbar-actions">

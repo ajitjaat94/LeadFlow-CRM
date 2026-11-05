@@ -81,7 +81,7 @@ const DashboardSidebar = ({ isOpen = false, onClose, onToggle }) => {
           <span className="crm-upgrade-icon"><MdAutoAwesome size={19} /></span>
           <strong>Upgrade to Pro</strong>
           <p>Get more leads, advanced reports and automation.</p>
-          <button type="button">Upgrade now <span aria-hidden="true">→</span></button>
+          <span className="crm-upgrade-coming-soon" role="status">Coming soon</span>
         </div>
       </div>
       </aside>

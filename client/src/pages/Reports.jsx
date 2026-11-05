@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   MdArrowDownward,
   MdArrowUpward,
@@ -117,7 +117,20 @@ const SectionHeading = ({ title, detail, action }) => (
   </div>
 );
 
+const ReportsLoadingSkeleton = () => (
+  <div className="space-y-4" aria-busy="true" aria-label="Loading report data">
+    <span className="sr-only" role="status">Loading report data</span>
+    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
+      {Array.from({ length: 5 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl border border-slate-200 bg-white p-4"><div className="h-3 w-2/5 rounded bg-slate-200" /><div className="mt-4 h-6 w-3/5 rounded bg-slate-100" /><div className="mt-3 h-3 w-4/5 rounded bg-slate-100" /></div>)}
+    </div>
+    <div className="grid gap-4 2xl:grid-cols-2">
+      {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white p-5"><div className="h-4 w-1/3 rounded bg-slate-200" /><div className="mt-3 h-3 w-2/3 rounded bg-slate-100" /><div className="mt-8 h-36 rounded-xl bg-slate-100" /></div>)}
+    </div>
+  </div>
+);
+
 const Reports = () => {
+  const [searchTerm, setSearchTerm] = useState("");
   const [leads, setLeads] = useState([]);
   const [deals, setDeals] = useState([]);
   const [followUps, setFollowUps] = useState([]);
@@ -126,54 +139,63 @@ const Reports = () => {
   const [period, setPeriod] = useState("30days");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
   const [now] = useState(() => new Date());
 
-  const loadReportData = async (refresh = false) => {
+  const fetchReportData = useCallback(async () => {
+    const data = await Promise.all([
+      getLeads(),
+      getDeals(),
+      getFollowUps(),
+    ]);
+    if (!data.every(Array.isArray)) {
+      throw new Error("The reports API returned incomplete data. Retry to load the report.");
+    }
+    return data;
+  }, []);
+
+  const loadReportData = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
+    setLoading(true);
+    setLoadError("");
     try {
-      const [leadData, dealData, followUpData] = await Promise.all([
-        getLeads(),
-        getDeals(),
-        getFollowUps(),
-      ]);
+      const [leadData, dealData, followUpData] = await fetchReportData();
       setLeads(leadData || []);
       setDeals(dealData || []);
       setFollowUps(followUpData || []);
       localStorage.setItem(getProgressStorageKey("reports-reviewed"), "true");
-      setError("");
+      setLoadError("");
       if (refresh) setNotice("Reports updated with the latest CRM data.");
     } catch (requestError) {
-      if (requestError.response?.status !== 401) {
-        setError(requestError.response?.data?.message || "Unable to load reports. Check the API connection and try again.");
-      }
+      setLoadError(requestError.response?.data?.message || requestError.message || "Unable to load reports. Check the API connection and try again.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [fetchReportData]);
 
   useEffect(() => {
     let active = true;
-    Promise.all([getLeads(), getDeals(), getFollowUps()])
+    fetchReportData()
       .then(([leadData, dealData, followUpData]) => {
         if (!active) return;
-        setLeads(leadData || []);
-        setDeals(dealData || []);
-        setFollowUps(followUpData || []);
+        setLeads(leadData);
+        setDeals(dealData);
+        setFollowUps(followUpData);
         localStorage.setItem(getProgressStorageKey("reports-reviewed"), "true");
-        setError("");
+        setLoadError("");
       })
       .catch((requestError) => {
-        if (active && requestError.response?.status !== 401) {
-          setError(requestError.response?.data?.message || "Unable to load reports. Check the API connection and try again.");
+        if (active) {
+          setLoadError(requestError.response?.data?.message || requestError.message || "Unable to load reports. Check the API connection and try again.");
         }
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [fetchReportData]);
 
   useEffect(() => {
     let active = true;
@@ -386,7 +408,7 @@ const Reports = () => {
     <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
       <DashboardSidebar isOpen={sidebarOpen} onClose={() => { if (window.innerWidth <= 760) setSidebarOpen(false); }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
-        <DashboardTopbar searchTerm="" onSearchChange={() => {}} onAddLead={exportReport} addButtonLabel="Export report" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
+        <DashboardTopbar searchTerm={searchTerm} onSearchChange={setSearchTerm} onAddLead={exportReport} addButtonLabel="Export report" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
         <div className="crm-page space-y-5">
           <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 shadow-sm sm:flex sm:items-center sm:justify-between sm:p-6">
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-violet-500" />
@@ -398,13 +420,20 @@ const Reports = () => {
             <div className="relative mt-4 flex flex-wrap items-center gap-2 sm:mt-0">
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-500"><MdCalendarToday /><span className="sr-only">Report date range</span><select className={inputClass} value={period} onChange={(event) => setPeriod(event.target.value)} aria-label="Report date range">{periods.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
               <button type="button" onClick={() => loadReportData(true)} disabled={refreshing || loading} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"><MdRefresh className={refreshing ? "animate-spin" : ""} />Refresh</button>
-              <button type="button" onClick={exportReport} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700"><MdDownload />Export CSV</button>
+              <button type="button" onClick={exportReport} disabled={loading || Boolean(loadError)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"><MdDownload />Export CSV</button>
             </div>
           </section>
 
           {(error || notice) && <div className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${error ? "border-rose-100 bg-rose-50 text-rose-700" : "border-emerald-100 bg-emerald-50 text-emerald-800"}`} role={error ? "alert" : "status"}><span>{error || notice}</span><button type="button" className="font-bold" onClick={() => { setError(""); setNotice(""); }} aria-label="Dismiss message">&times;</button></div>}
           {timeZoneError && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">{timeZoneError}</p>}
 
+          {loadError ? (
+            <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-center" role="alert">
+              <h2 className="text-sm font-bold text-rose-900">Reports could not be loaded</h2>
+              <p className="mt-1 text-sm text-rose-800">{loadError}</p>
+              <button type="button" onClick={() => loadReportData()} disabled={loading} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-50"><MdRefresh />Retry</button>
+            </section>
+          ) : loading ? <ReportsLoadingSkeleton /> : <>
           <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
             <Metric label="Leads created" value={loading ? "—" : periodLeads.length} detail={`${leads.length} total in workspace`} icon={MdGroups} tone="bg-blue-50 text-blue-700" />
             <Metric label="Deal win rate" value={`${conversionRate}%`} detail={`${wonDeals.length} won of ${decidedDeals} decided deals`} icon={MdCheckCircle} tone="bg-emerald-50 text-emerald-700" />
@@ -502,8 +531,8 @@ const Reports = () => {
             </div> : <div className="px-5 py-9 text-center"><p className="text-sm font-semibold text-slate-700">No pending follow-ups in this period</p><p className="mt-1 text-xs text-slate-500">Scheduled follow-ups will appear here.</p><Link to="/calendar" className="mt-3 inline-block text-xs font-bold text-blue-700">Go to calendar →</Link></div>}
           </section>
 
-          {!loading && <p className="text-center text-[10px] text-slate-400">Leads and deals are filtered by creation date. Follow-up completion totals use completion timestamps; the due-period rate uses scheduled dates from {selectedDateRange} and excludes cancelled items. Dates use {timeZone}. Deal stages are sale outcomes; lead Won/Lost values are historical only and do not determine deal win rate.</p>}
-          {loading && <span className="sr-only" role="status">Loading report data</span>}
+          <p className="text-center text-[10px] text-slate-400">Leads and deals are filtered by creation date. Follow-up completion totals use completion timestamps; the due-period rate uses scheduled dates from {selectedDateRange} and excludes cancelled items. Dates use {timeZone}. Deal stages are sale outcomes; lead Won/Lost values are historical only and do not determine deal win rate.</p>
+          </>}
         </div>
       </main>
     </div>

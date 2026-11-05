@@ -14,6 +14,7 @@ import {
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import { createDeal, deleteDeal, getContacts, getDeals, getLeads, updateDeal } from "../services/api";
+import { formatDateOnly, getDateOnlyValue, getTodayDateOnly, isDateOnlyInCurrentMonth } from "../utils/dealDates";
 
 const stages = ["Prospecting", "Qualification", "Proposal", "Negotiation", "Won", "Lost"];
 const probabilities = { Prospecting: 10, Qualification: 25, Proposal: 50, Negotiation: 75, Won: 100, Lost: 0 };
@@ -31,10 +32,7 @@ const emptyDeal = {
 };
 
 const dateInputValue = (value) => {
-  if (!value) return "";
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+  return getDateOnlyValue(value);
 };
 
 const formatMoney = (value, currency) => new Intl.NumberFormat(undefined, {
@@ -242,7 +240,17 @@ const Deals = () => {
         } else {
           setRelatedDataError("");
           const leadId = location.state?.createDealForLeadId;
-          if (leadId && !prefillHandled.current) {
+          const editDealId = location.state?.editDealId;
+          if ((leadId || editDealId) && !prefillHandled.current) {
+            if (editDealId) {
+              const selectedDeal = dealResult.value.find((item) => String(item._id) === String(editDealId));
+              if (!selectedDeal) {
+                setError("The selected deal could not be found in your workspace.");
+              } else {
+                setEditing(selectedDeal);
+                setFormError("");
+              }
+            } else {
             const relatedLead = leadResult.value.find((item) => String(item._id) === String(leadId));
             if (!relatedLead) {
               setError("The selected lead could not be found. Choose an existing lead to create a deal.");
@@ -255,6 +263,7 @@ const Deals = () => {
               });
               setFormError("");
             }
+            }
             prefillHandled.current = true;
             navigate("/deals", { replace: true, state: null });
           }
@@ -262,7 +271,7 @@ const Deals = () => {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [location.state?.createDealForLeadId, navigate, retryCount]);
+  }, [location.state?.createDealForLeadId, location.state?.editDealId, navigate, retryCount]);
 
   const currencyOptions = useMemo(() => [...new Set(deals.map((item) => item.currency || "INR"))].sort(), [deals]);
   const filteredDeals = useMemo(() => {
@@ -285,11 +294,13 @@ const Deals = () => {
   const wonDeals = deals.filter((item) => item.stage === "Won");
   const today = new Date();
   const closeThisMonth = deals.filter((item) => {
-    if (!item.expectedCloseDate || ["Won", "Lost"].includes(item.stage)) return false;
-    const date = new Date(item.expectedCloseDate);
-    return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
+    if (["Won", "Lost"].includes(item.stage)) return false;
+    return isDateOnlyInCurrentMonth(dateInputValue(item.expectedCloseDate), today);
   }).length;
-  const overdueDeals = openDeals.filter((item) => item.expectedCloseDate && new Date(item.expectedCloseDate) < new Date(new Date().toDateString())).length;
+  const overdueDeals = openDeals.filter((item) => {
+    const closeDate = dateInputValue(item.expectedCloseDate);
+    return closeDate && closeDate < getTodayDateOnly(today);
+  }).length;
 
   const save = async (values) => {
     if (saveInProgress.current) return;
@@ -385,7 +396,7 @@ const Deals = () => {
       </div>
       <p className="mt-3 text-base font-bold text-slate-900">{formatMoney(item.value, item.currency || "INR")}</p>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-        <span>{item.expectedCloseDate ? `Close ${dateInputValue(item.expectedCloseDate)}` : "No close date"}</span>
+        <span>{item.expectedCloseDate ? `Close ${formatDateOnly(dateInputValue(item.expectedCloseDate))}` : "No close date"}</span>
         <span className="font-semibold text-blue-700">{item.probability}% likely</span>
       </div>
       <label className="mt-3 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Move stage
@@ -456,7 +467,7 @@ const Deals = () => {
                       <td className="px-4 py-3 text-xs text-slate-600">{item.contact?.name || "—"}{item.lead?.name && <span className="block text-[10px] text-slate-400">Lead: {item.lead.name}</span>}</td>
                       <td className="px-4 py-3 text-sm font-bold text-slate-800">{formatMoney(item.value, item.currency || "INR")}</td>
                       <td className="px-4 py-3"><select className={`${inputClass} py-1.5 text-xs`} value={item.stage} onChange={(event) => changeStage(item, event.target.value)} aria-label={`Stage for ${item.name}`}>{stages.map((stage) => <option key={stage}>{stage}</option>)}</select></td>
-                      <td className="px-4 py-3 text-xs text-slate-600">{item.probability}%</td><td className="px-4 py-3 text-xs text-slate-600">{item.expectedCloseDate ? dateInputValue(item.expectedCloseDate) : "—"}</td>
+                      <td className="px-4 py-3 text-xs text-slate-600">{item.probability}%</td><td className="px-4 py-3 text-xs text-slate-600">{item.expectedCloseDate ? formatDateOnly(dateInputValue(item.expectedCloseDate)) : "—"}</td>
                       <td className="px-5 py-3"><div className="flex justify-end gap-1"><button type="button" onClick={() => startEditing(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={`Edit ${item.name}`}><MdEdit /></button><button type="button" onClick={() => removeDeal(item)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600" aria-label={`Delete ${item.name}`}><MdDeleteOutline /></button></div></td>
                     </tr>)}</tbody>
                   </table></div>}

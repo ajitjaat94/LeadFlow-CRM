@@ -102,7 +102,8 @@ export const deleteLeadField = async (id) => {
 
 export const getFollowUps = async (status) => {
   const { data } = await api.get("/follow-ups", { params: status && status !== "All" ? { status } : undefined });
-  return data.data || [];
+  if (!Array.isArray(data.data)) throw new Error("The follow-ups API returned an invalid response.");
+  return data.data;
 };
 
 export const getDashboardFollowUps = async () => {
@@ -189,7 +190,8 @@ export const mergeDuplicateContactDetails = async (targetId, values) => {
 
 export const getDeals = async () => {
   const { data } = await api.get("/deals");
-  return data.data || [];
+  if (!Array.isArray(data.data)) throw new Error("The deals API returned an invalid response.");
+  return data.data;
 };
 
 export const createDeal = async (payload) => {

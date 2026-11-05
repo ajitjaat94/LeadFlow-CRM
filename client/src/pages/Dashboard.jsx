@@ -450,7 +450,6 @@ const Dashboard = () => {
         <DashboardTopbar
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
-          searchPlaceholder="Search leads in this period…"
           onNotificationsClick={() => navigate("/follow-ups")}
           authRequired={location.state?.authRequired}
           authNotice={location.state?.sessionExpired ? "Your session expired. Sign in again to continue where you left off." : ""}

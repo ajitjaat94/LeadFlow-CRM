@@ -5,8 +5,9 @@ import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import FollowUpCard from "../components/follow-ups/FollowUpCard";
 import PhoneWhatsAppAction from "../components/PhoneWhatsAppAction";
-import { getLead, getLeadFields, getLeadFollowUps, getSettings, updateLead } from "../services/api";
+import { getDeals, getLead, getLeadFields, getLeadFollowUps, getSettings, updateLead } from "../services/api";
 import { getBrowserTimeZone } from "../utils/followUpTime";
+import { formatDateOnly, getDateOnlyValue } from "../utils/dealDates";
 
 const getLeadSource = (record) => {
   const customFields = record.customFields instanceof Map
@@ -18,6 +19,19 @@ const getLeadSource = (record) => {
   return String(record.source || legacySource || "").trim() || "Not recorded";
 };
 
+const formatDealValue = (value, currency) => {
+  const amount = Number(value) || 0;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "INR",
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency || "INR"} ${amount.toLocaleString()}`;
+  }
+};
+
 const LeadDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -25,6 +39,8 @@ const LeadDetail = () => {
   const [lead, setLead] = useState(null);
   const [customFields, setCustomFields] = useState([]);
   const [followUps, setFollowUps] = useState([]);
+  const [relatedDeals, setRelatedDeals] = useState([]);
+  const [relatedDealsError, setRelatedDealsError] = useState("");
   const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
   const [loadedId, setLoadedId] = useState("");
   const [error, setError] = useState("");
@@ -33,8 +49,8 @@ const LeadDetail = () => {
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([getLead(id), getLeadFields(), getLeadFollowUps(id), getSettings()])
-      .then(([leadResult, fieldsResult, followUpsResult, settingsResult]) => {
+    Promise.allSettled([getLead(id), getLeadFields(), getLeadFollowUps(id), getSettings(), getDeals()])
+      .then(([leadResult, fieldsResult, followUpsResult, settingsResult, dealsResult]) => {
         if (!active) return;
         const errors = [];
         if (leadResult.status === "fulfilled") {
@@ -48,6 +64,14 @@ const LeadDetail = () => {
         else errors.push("Custom field definitions could not be loaded.");
         if (followUpsResult.status === "fulfilled") setFollowUps(followUpsResult.value || []);
         else errors.push("Follow-ups could not be loaded.");
+        if (dealsResult.status === "fulfilled") {
+          setRelatedDeals((dealsResult.value || []).filter((item) => String(item.lead?._id || item.lead) === String(id)));
+          setRelatedDealsError("");
+        } else {
+          setRelatedDeals([]);
+          setRelatedDealsError("Related deals could not be loaded.");
+          errors.push("Related deals could not be loaded.");
+        }
         if (settingsResult.status === "fulfilled") {
           setTimeZone(settingsResult.value.workspace.timeZone || "Asia/Kolkata");
         } else {
@@ -132,6 +156,37 @@ const LeadDetail = () => {
                   <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</dt><dd className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-800">{activeLead.phone ? <><a className="text-blue-700 hover:underline" href={`tel:${activeLead.phone}`}>{activeLead.phone}</a><PhoneWhatsAppAction name={activeLead.name} phone={activeLead.phone} compact onSavePhone={saveCorrectedPhone} /></> : "Not provided"}</dd></div>
                   <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Source</dt><dd className="mt-1 text-sm text-slate-800">{getLeadSource(activeLead)}</dd></div>
                 </dl>
+              </section>
+
+              <section className="crm-panel overflow-hidden">
+                <div className="crm-panel-heading">
+                  <div><h2>Related deals</h2><p>Each deal has its own value, expected close date, and sales outcome. Lead status remains qualification progress.</p></div>
+                  <button type="button" onClick={() => navigate("/deals", { state: { createDealForLeadId: id } })} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700"><MdAdd />Create deal</button>
+                </div>
+                {relatedDealsError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-5 text-sm text-rose-700" role="alert">
+                    <span>{relatedDealsError}</span>
+                    <button type="button" onClick={retryLoad} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold hover:bg-rose-50">Retry</button>
+                  </div>
+                ) : relatedDeals.length ? (
+                  <ul className="divide-y divide-slate-100">
+                    {relatedDeals.map((item) => (
+                      <li key={item._id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                        <div className="min-w-0">
+                          <Link to="/deals" state={{ editDealId: item._id }} className="break-words text-sm font-semibold text-blue-700 hover:underline">{item.name}</Link>
+                          <p className="mt-1 text-xs text-slate-600">{item.stage} · {formatDateOnly(getDateOnlyValue(item.expectedCloseDate))}</p>
+                        </div>
+                        <span className="text-sm font-bold text-slate-900">{formatDealValue(item.value, item.currency)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="px-5 py-6 text-center">
+                    <p className="text-sm font-semibold text-slate-700">No related deals yet</p>
+                    <p className="mt-1 text-xs text-slate-500">Create a deal to track a specific sales opportunity.</p>
+                    <button type="button" onClick={() => navigate("/deals", { state: { createDealForLeadId: id } })} className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"><MdAdd />Create deal</button>
+                  </div>
+                )}
               </section>
 
               <section className="crm-panel overflow-hidden">

@@ -15,6 +15,7 @@ import {
   MdUnarchive,
 } from "react-icons/md";
 import * as XLSX from "xlsx";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardSidebar from "../components/dashboard/DashboardSidebar";
 import DashboardTopbar from "../components/dashboard/DashboardTopbar";
 import FollowUpModal from "../components/follow-ups/FollowUpModal";
@@ -197,6 +198,8 @@ const ContactForm = ({ contact, customFields, saving, error, duplicateMatches, o
 };
 
 const Contacts = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
   const [leads, setLeads] = useState([]);
   const [timeZone, setTimeZone] = useState(getBrowserTimeZone);
@@ -221,6 +224,7 @@ const Contacts = () => {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const fileInputRef = useRef(null);
+  const openedContactFromSearch = useRef("");
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
 
   const loadData = async (archived = showArchived) => {
@@ -332,7 +336,7 @@ const Contacts = () => {
     setRetryCount((count) => count + 1);
   };
 
-  const openDetails = async (item) => {
+  const openDetails = useCallback(async (item) => {
     setSelectedContact({ ...item, loadingDetails: true });
     setLinkLeadId("");
     setMergeContactId("");
@@ -342,7 +346,20 @@ const Contacts = () => {
       setSelectedContact(item);
       setError(requestError.response?.data?.message || "Unable to load this contact.");
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const contactId = location.state?.openContactId;
+    if (!contactId || loading || openedContactFromSearch.current === String(contactId)) return;
+    const timer = window.setTimeout(() => {
+      openedContactFromSearch.current = String(contactId);
+      const contact = contacts.find((item) => String(item._id) === String(contactId));
+      navigate(location.pathname, { replace: true, state: null });
+      if (contact) openDetails(contact);
+      else setError("The selected contact could not be found in your workspace.");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [contacts, loading, location.pathname, location.state?.openContactId, navigate, openDetails]);
 
   const saveContact = async (values) => {
     setSaving(true);
@@ -755,7 +772,7 @@ const Contacts = () => {
               <section className="rounded-2xl border border-slate-200">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><h3 className="text-sm font-bold text-slate-900">Linked leads</h3><p className="mt-0.5 text-xs text-slate-500">Lead status tracks qualification; deal outcomes stay on their individual deals.</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">{selectedContact.linkedLeads?.length || 0}</span></div>
                 {selectedContact.loadingDetails ? <p className="p-4 text-xs text-slate-500">Loading linked records...</p> : (selectedContact.linkedLeads || []).length === 0 ? <p className="p-4 text-xs text-slate-500">No linked leads. Link an existing lead below.</p> : (
-                  <div className="divide-y divide-slate-100">{selectedContact.linkedLeads.map((lead) => <div key={lead._id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{lead.name}</p><p className="text-xs text-slate-500">{lead.company} · <span className="font-semibold">{["Won", "Lost"].includes(lead.status) ? `${lead.status} (legacy)` : lead.status}</span></p></div><div className="flex items-center gap-2"><button type="button" onClick={() => { setLinkLeadId(""); setFollowUpLead(lead); }} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-2 text-xs font-semibold text-blue-700"><MdEvent />Follow-up</button><button type="button" onClick={() => handleUnlinkLead(lead._id)} className="text-xs font-semibold text-slate-500 hover:text-rose-600">Unlink</button></div></div>)}</div>
+                  <div className="divide-y divide-slate-100">{selectedContact.linkedLeads.map((lead) => <div key={lead._id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"><div className="min-w-0"><Link to={`/lead/${lead._id}`} className="truncate text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500">{lead.name}</Link><p className="text-xs text-slate-500">{lead.company} · <span className="font-semibold">{["Won", "Lost"].includes(lead.status) ? `${lead.status} (legacy)` : lead.status}</span></p></div><div className="flex items-center gap-2"><button type="button" onClick={() => { setLinkLeadId(""); setFollowUpLead(lead); }} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-2 text-xs font-semibold text-blue-700"><MdEvent />Follow-up</button><button type="button" onClick={() => handleUnlinkLead(lead._id)} className="text-xs font-semibold text-slate-500 hover:text-rose-600">Unlink</button></div></div>)}</div>
                 )}
                 <div className="flex flex-col gap-2 border-t border-slate-100 p-3 sm:flex-row">
                   <select className={`${inputBase} min-w-0 flex-1`} value={linkLeadId} onChange={(event) => setLinkLeadId(event.target.value)} aria-label="Choose existing lead to link"><option value="">Choose an existing lead</option>{availableLeads.map((lead) => <option key={lead._id} value={lead._id}>{lead.name} · {lead.company}</option>)}</select>

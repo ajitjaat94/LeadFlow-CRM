@@ -10,6 +10,7 @@ import {
   MdGroups,
   MdPersonAddAlt1,
   MdRefresh,
+  MdSearch,
   MdTrendingDown,
 } from "react-icons/md";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -448,8 +449,6 @@ const Dashboard = () => {
       />
       <main className="crm-main">
         <DashboardTopbar
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
           onNotificationsClick={() => navigate("/follow-ups")}
           authRequired={location.state?.authRequired}
           authNotice={location.state?.sessionExpired ? "Your session expired. Sign in again to continue where you left off." : ""}
@@ -735,6 +734,10 @@ const Dashboard = () => {
                     <div className="crm-dashboard-card-heading">
                       <div><h2 id="dashboard-recent-title">Recent leads</h2><p>{matchingLeads.length} matching leads · created during {rangeLabel}{search ? " · filtered by search" : ""}</p></div>
                       <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-2.5 text-slate-400 focus-within:ring-2 focus-within:ring-blue-400">
+                          <MdSearch size={16} aria-hidden="true" />
+                          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search leads in this period" aria-label="Search dashboard leads" className="w-40 min-w-0 bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-500 sm:w-48" />
+                        </label>
                         <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-50" onClick={handleExportCSV} disabled={!rangeValid || !matchingLeads.length}>
                           <MdDownload size={16} /> Export CSV
                         </button>

@@ -19,7 +19,6 @@ const WorkspacePage = ({ section }) => {
   const [title, description] = sectionCopy[section] || ["Workspace", "Your workspace overview."];
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
-  const [searchTerm, setSearchTerm] = useState("");
 
   return (
     <div className={`crm-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
@@ -27,7 +26,7 @@ const WorkspacePage = ({ section }) => {
         if (window.innerWidth <= 760) setSidebarOpen(false);
       }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
-        <DashboardTopbar searchTerm={searchTerm} onSearchChange={setSearchTerm} onAddLead={() => navigate("/leads")} onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
+        <DashboardTopbar onAddLead={() => navigate("/leads")} onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
         <div className="crm-page">
           <div className="crm-page-heading">
             <div>

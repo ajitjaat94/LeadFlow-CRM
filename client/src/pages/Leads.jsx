@@ -453,7 +453,7 @@ const Leads = () => {
         if (window.innerWidth <= 760) setSidebarOpen(false);
       }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
-        <DashboardTopbar searchTerm={searchTerm} onSearchChange={handleSearchChange} onAddLead={() => navigate("/leads/new")} onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
+        <DashboardTopbar onAddLead={() => navigate("/leads/new")} onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
         <div className="crm-page space-y-5">
           <section className="relative flex flex-col justify-between gap-5 overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 shadow-sm shadow-blue-100/50 sm:flex-row sm:items-center sm:p-6">
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-violet-500" />

@@ -8,6 +8,7 @@ import {
   MdEvent,
   MdMessage,
   MdMoreHoriz,
+  MdSearch,
   MdSchedule,
   MdToday,
 } from "react-icons/md";
@@ -262,7 +263,7 @@ const Calendar = () => {
     <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
       <DashboardSidebar isOpen={sidebarOpen} onClose={() => { if (window.innerWidth <= 760) setSidebarOpen(false); }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
-        <DashboardTopbar searchTerm={search} onSearchChange={setSearch} onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
+        <DashboardTopbar onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
         <div className="crm-page space-y-5">
           <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 shadow-sm sm:flex sm:items-center sm:justify-between sm:p-6">
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-violet-500" />
@@ -348,6 +349,10 @@ const Calendar = () => {
                     document.getElementById(`calendar-filter-${filters[nextIndex].toLowerCase()}`)?.focus();
                   }} aria-checked={filter === option} className={`rounded-full px-2.5 py-1.5 text-[10px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${filter === option ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>{option}</button>)}
                 </div>
+                <label className="mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-400 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+                  <MdSearch size={17} aria-hidden="true" />
+                  <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search events for this day" aria-label="Search calendar events" className="min-w-0 flex-1 bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-500" />
+                </label>
               </div>
               {loadError ? <div className="p-5 text-center text-sm text-rose-700" role="alert"><p>Unable to load calendar events. {loadError}</p><button type="button" onClick={retryLoad} className="mt-2 inline-flex items-center gap-1 font-bold underline underline-offset-2">Retry</button></div>
                 : loading ? <p className="p-5 text-center text-sm text-slate-600" role="status">Loading calendar events…</p>

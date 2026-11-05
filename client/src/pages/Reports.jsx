@@ -130,7 +130,6 @@ const ReportsLoadingSkeleton = () => (
 );
 
 const Reports = () => {
-  const [searchTerm, setSearchTerm] = useState("");
   const [leads, setLeads] = useState([]);
   const [deals, setDeals] = useState([]);
   const [followUps, setFollowUps] = useState([]);
@@ -408,7 +407,7 @@ const Reports = () => {
     <div className={`crm-shell crm-dashboard-shell ${sidebarOpen ? "crm-sidebar-expanded" : "crm-sidebar-collapsed"}`}>
       <DashboardSidebar isOpen={sidebarOpen} onClose={() => { if (window.innerWidth <= 760) setSidebarOpen(false); }} onToggle={() => setSidebarOpen((open) => !open)} />
       <main className="crm-main">
-        <DashboardTopbar searchTerm={searchTerm} onSearchChange={setSearchTerm} onAddLead={exportReport} addButtonLabel="Export report" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
+        <DashboardTopbar onAddLead={exportReport} addButtonLabel="Export report" onToggleSidebar={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen} />
         <div className="crm-page space-y-5">
           <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-5 shadow-sm sm:flex sm:items-center sm:justify-between sm:p-6">
             <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-violet-500" />

@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const API_BASE_URL = "https://leadflow-crm-77e8.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL?.trim()
+  || "https://leadflow-crm-77e8.onrender.com/api";
+const AUTH_REQUEST_TIMEOUT_MS = 60_000;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -41,13 +43,13 @@ api.interceptors.response.use(
 );
 
 export const loginUser = async (payload) => {
-  const { data } = await api.post("/auth/login", payload);
+  const { data } = await api.post("/auth/login", payload, { timeout: AUTH_REQUEST_TIMEOUT_MS });
   sessionExpirationHandled = false;
   return data;
 };
 
 export const signupUser = async (payload) => {
-  const { data } = await api.post("/auth/signup", payload);
+  const { data } = await api.post("/auth/signup", payload, { timeout: AUTH_REQUEST_TIMEOUT_MS });
   sessionExpirationHandled = false;
   return data;
 };

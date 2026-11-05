@@ -79,7 +79,9 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess, authNotice = "" }) => {
             ? "The authentication service is temporarily unavailable. Try again shortly."
             : validationMessage || (typeof serverData?.error === "string" ? serverData.error : serverData?.message) || fallbackMessage
         : err.isAxiosError
-          ? "Unable to reach the authentication service. Check your connection and try again."
+          ? ["ECONNABORTED", "ETIMEDOUT"].includes(err.code)
+            ? "The authentication service took too long to respond. Please try again."
+            : "Unable to reach the authentication service. Check your connection and try again."
           : err.message || fallbackMessage;
       setError(errorMessage);
     } finally {

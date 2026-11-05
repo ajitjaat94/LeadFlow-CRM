@@ -12,7 +12,6 @@ import {
 
 const Team = () => {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
-  const [searchTerm, setSearchTerm] = useState("");
   const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState("");
@@ -154,8 +153,6 @@ const Team = () => {
       />
       <main className="crm-main">
         <DashboardTopbar
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
           sidebarOpen={sidebarOpen}
         />

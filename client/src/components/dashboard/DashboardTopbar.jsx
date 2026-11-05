@@ -29,8 +29,6 @@ const matchesSearch = (record, query, fields) => fields
   .some((field) => normalizeSearchText(field).includes(query));
 
 const DashboardTopbar = ({
-  searchTerm,
-  onSearchChange,
   onAddLead,
   addButtonLabel = "Add lead",
   authRequired = false,
@@ -45,7 +43,7 @@ const DashboardTopbar = ({
 }) => {
   const navigate = useNavigate();
   const [authModalOpen, setAuthModalOpen] = useState(authRequired);
-  const globalSearch = searchTerm || "";
+  const [globalSearch, setGlobalSearch] = useState("");
   const [workspaceResults, setWorkspaceResults] = useState({ query: "", loading: false, leads: [], contacts: [], deals: [], error: "" });
   const [searchRetryCount, setSearchRetryCount] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -114,10 +112,10 @@ const DashboardTopbar = ({
   useEffect(() => {
     if (globalSearch.trim().length < 2) return undefined;
     const closeOnEscape = (event) => {
-      if (event.key === "Escape") onSearchChange?.("");
+      if (event.key === "Escape") setGlobalSearch("");
     };
     const closeOnOutsideClick = (event) => {
-      if (!searchPanelRef.current?.contains(event.target)) onSearchChange?.("");
+      if (!searchPanelRef.current?.contains(event.target)) setGlobalSearch("");
     };
     document.addEventListener("mousedown", closeOnOutsideClick);
     window.addEventListener("keydown", closeOnEscape);
@@ -125,7 +123,7 @@ const DashboardTopbar = ({
       document.removeEventListener("mousedown", closeOnOutsideClick);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [globalSearch, onSearchChange]);
+  }, [globalSearch]);
 
   useEffect(() => {
     if (hideSearch) return undefined;
@@ -248,7 +246,7 @@ const DashboardTopbar = ({
       : type === "deal"
         ? { editDealId: record._id }
         : undefined;
-    onSearchChange?.("");
+    setGlobalSearch("");
     navigate(path, { state });
   };
 
@@ -278,10 +276,8 @@ const DashboardTopbar = ({
             <MdSearch size={20} />
             <input
               ref={searchInputRef}
-              value={searchTerm || ""}
-              onChange={(event) => {
-                onSearchChange?.(event.target.value);
-              }}
+              value={globalSearch}
+              onChange={(event) => setGlobalSearch(event.target.value)}
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder.replace("…", "").replace("...", "")}
               aria-expanded={showWorkspaceSearch}

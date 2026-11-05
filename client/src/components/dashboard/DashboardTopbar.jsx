@@ -9,7 +9,7 @@ import {
   MdSearch,
 } from "react-icons/md";
 import AuthModal from "../AuthModal";
-import { getContacts, getDeals, getFollowUps, getLeads, getSettings } from "../../services/api";
+import { getContacts, getDeals, getFollowUps, getLeads, getSettings, logoutUser } from "../../services/api";
 import { formatFollowUpDate, getBrowserTimeZone, isFollowUpOverdue } from "../../utils/followUpTime";
 
 const getInternalReturnPath = (value) => {
@@ -214,6 +214,10 @@ const DashboardTopbar = ({
   };
 
   const handleLogout = () => {
+    const refreshToken = localStorage.getItem("refreshToken");
+    logoutUser(refreshToken).catch((error) => {
+      console.error("Could not revoke the refresh session during sign out.", error.message);
+    });
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");

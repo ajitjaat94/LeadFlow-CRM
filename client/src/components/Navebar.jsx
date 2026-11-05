@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { IoIosNotificationsOutline } from "react-icons/io";
 import { HiMenuAlt3, HiX } from "react-icons/hi";
 import AuthModal from "./AuthModal";
+import { logoutUser } from "../services/api";
 import {
   MdDashboard,
   MdPeople,
@@ -35,6 +36,10 @@ const Navbar = () => {
   };
 
   const handleLogout = () => {
+    const refreshToken = localStorage.getItem("refreshToken");
+    logoutUser(refreshToken).catch((error) => {
+      console.error("Could not revoke the refresh session during sign out.", error.message);
+    });
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");

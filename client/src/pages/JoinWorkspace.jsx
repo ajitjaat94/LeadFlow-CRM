@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   acceptTeamInvitation,
   loginUser,
+  logoutUser,
   previewTeamInvitation,
   signupUser,
 } from "../services/api";
@@ -99,6 +100,10 @@ const JoinWorkspace = () => {
                     type="button"
                     className="font-semibold underline"
                     onClick={() => {
+                      const refreshToken = localStorage.getItem("refreshToken");
+                      logoutUser(refreshToken).catch((requestError) => {
+                        console.error("Could not revoke the refresh session during sign out.", requestError.message);
+                      });
                       localStorage.removeItem("accessToken");
                       localStorage.removeItem("refreshToken");
                       localStorage.removeItem("user");

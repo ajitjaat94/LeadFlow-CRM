@@ -3,6 +3,7 @@ import axios from "axios";
 const API_BASE_URL = import.meta.env.VITE_API_URL?.trim()
   || "https://leadflow-crm-77e8.onrender.com/api";
 const AUTH_REQUEST_TIMEOUT_MS = 60_000;
+const TOKEN_REFRESH_BUFFER_MS = 60_000;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -13,10 +14,88 @@ const api = axios.create({
 });
 
 let sessionExpirationHandled = false;
+let refreshRequest = null;
 
-api.interceptors.request.use((config) => {
+const getTokenExpiry = (token) => {
+  try {
+    const encodedPayload = token.split(".")[1];
+    if (!encodedPayload) return null;
+    const base64 = encodedPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")));
+    return Number.isFinite(payload.exp) ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+const clearSessionAndNotify = () => {
+  if (sessionExpirationHandled) return;
+  sessionExpirationHandled = true;
+  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  localStorage.removeItem("accessToken");
+  localStorage.removeItem("refreshToken");
+  localStorage.removeItem("user");
+  window.dispatchEvent(new CustomEvent("leadflow:session-expired", { detail: { returnTo } }));
+};
+
+const refreshAccessToken = () => {
+  if (!refreshRequest) {
+    const renew = async () => {
+      const currentAccessToken = localStorage.getItem("accessToken");
+      const currentExpiry = currentAccessToken ? getTokenExpiry(currentAccessToken) : null;
+      if (currentExpiry && currentExpiry > Date.now() + TOKEN_REFRESH_BUFFER_MS) {
+        return currentAccessToken;
+      }
+
+      const refreshToken = localStorage.getItem("refreshToken");
+      if (!refreshToken) throw new Error("No refresh token is available.");
+      const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken }, {
+        timeout: AUTH_REQUEST_TIMEOUT_MS,
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!data?.accessToken || !data?.refreshToken || !data?.user) {
+        throw new Error("The authentication service returned an incomplete refresh response.");
+      }
+      localStorage.setItem("accessToken", data.accessToken);
+      localStorage.setItem("refreshToken", data.refreshToken);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      sessionExpirationHandled = false;
+      window.dispatchEvent(new CustomEvent("leadflow:tokens-refreshed", { detail: data }));
+      return data.accessToken;
+    };
+    const renewAcrossTabs = () => (
+      typeof navigator !== "undefined" && navigator.locks?.request
+        ? navigator.locks.request("leadflow-auth-refresh", renew)
+        : renew()
+    );
+
+    refreshRequest = renewAcrossTabs().then((token) => {
+      refreshRequest = null;
+      return token;
+    }, (error) => {
+      refreshRequest = null;
+      throw error;
+    });
+  }
+  return refreshRequest;
+};
+
+const isAuthEndpoint = (url = "") => /\/auth\/(login|signup|refresh|logout)(?:\?|$)/.test(url);
+
+api.interceptors.request.use(async (config) => {
   const token = localStorage.getItem("accessToken");
   if (token) {
+    const expiresAt = getTokenExpiry(token);
+    if (expiresAt && expiresAt <= Date.now() + TOKEN_REFRESH_BUFFER_MS && !isAuthEndpoint(config.url)) {
+      try {
+        const refreshedToken = await refreshAccessToken();
+        config.headers.Authorization = `Bearer ${refreshedToken}`;
+        return config;
+      } catch (error) {
+        clearSessionAndNotify();
+        throw error;
+      }
+    }
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -24,19 +103,27 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    const requestUrl = error.config?.url || "";
+  async (error) => {
+    const request = error.config;
     const authMessage = String(error.response?.data?.message || "").trim().toLowerCase();
-    const confirmedInvalidSession = error.response?.status === 401
-      && !requestUrl.includes("/auth/")
-      && ["jwt expired", "invalid token", "please login again"].includes(authMessage);
-    if (confirmedInvalidSession && !sessionExpirationHandled) {
-      sessionExpirationHandled = true;
-      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      window.dispatchEvent(new CustomEvent("leadflow:session-expired", { detail: { returnTo } }));
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("user");
+    const expiredAccessToken = error.response?.status === 401
+      && !isAuthEndpoint(request?.url)
+      && ["jwt expired", "token expired"].includes(authMessage);
+    if (expiredAccessToken && request && !request._retry) {
+      request._retry = true;
+      try {
+        const refreshedToken = await refreshAccessToken();
+        request.headers.Authorization = `Bearer ${refreshedToken}`;
+        return api(request);
+      } catch (refreshError) {
+        clearSessionAndNotify();
+        return Promise.reject(refreshError);
+      }
+    }
+    if (error.response?.status === 401
+      && !isAuthEndpoint(request?.url)
+      && ["invalid token", "please login again"].includes(authMessage)) {
+      clearSessionAndNotify();
     }
     return Promise.reject(error);
   },
@@ -52,6 +139,14 @@ export const signupUser = async (payload) => {
   const { data } = await api.post("/auth/signup", payload, { timeout: AUTH_REQUEST_TIMEOUT_MS });
   sessionExpirationHandled = false;
   return data;
+};
+
+export const logoutUser = async (refreshToken = localStorage.getItem("refreshToken")) => {
+  if (!refreshToken) return;
+  await axios.post(`${API_BASE_URL}/auth/logout`, { refreshToken }, {
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
+    headers: { "Content-Type": "application/json" },
+  });
 };
 
 export const getLeads = async () => {

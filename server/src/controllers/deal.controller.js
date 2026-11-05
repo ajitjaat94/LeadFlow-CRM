@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { contact } from "../models/contact.js";
 import { deal, dealStages } from "../models/deal.js";
 import { lead } from "../models/lead.js";
+import { parseDateOnly, serializeDeal } from "../utils/dateOnly.js";
 
 const defaultProbabilities = {
     Prospecting: 10,
@@ -21,6 +22,7 @@ const normalizeDealInput = (body = {}) => {
             ? defaultProbabilities.Lost
             : Number(body.probability ?? defaultProbabilities[stage] ?? 10);
     const currency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : "";
+    const expectedCloseDate = parseDateOnly(body.expectedCloseDate);
 
     if (typeof body.name !== "string" || !body.name.trim()) {
         return { error: "Deal name is required." };
@@ -37,9 +39,7 @@ const normalizeDealInput = (body = {}) => {
     if (!/^[A-Z]{3}$/.test(currency)) {
         return { error: "Currency must be a three-letter currency code." };
     }
-    if (body.expectedCloseDate && Number.isNaN(new Date(body.expectedCloseDate).getTime())) {
-        return { error: "Expected close date is invalid." };
-    }
+    if (expectedCloseDate.error) return { error: expectedCloseDate.error };
 
     return {
         values: {
@@ -48,7 +48,7 @@ const normalizeDealInput = (body = {}) => {
             currency,
             stage,
             probability,
-            expectedCloseDate: body.expectedCloseDate ? new Date(body.expectedCloseDate) : null,
+            expectedCloseDate: expectedCloseDate.value,
             contact: body.contactId || null,
             lead: body.leadId || null,
             notes: typeof body.notes === "string" ? body.notes.trim() : "",
@@ -85,7 +85,7 @@ const dealQuery = (owners) => deal.find({ owner: { $in: owners } })
 
 export const getDeals = async (req, res) => {
     try {
-        const data = await dealQuery(req.workspaceMemberIds);
+        const data = (await dealQuery(req.workspaceMemberIds)).map(serializeDeal);
         return res.status(200).json({ data });
     } catch (error) {
         console.error("Unable to load deals", error);
@@ -105,7 +105,7 @@ export const createDeal = async (req, res) => {
             .populate("lead", "name company status")
             .populate("owner", "username email")
             .lean();
-        return res.status(201).json({ data });
+        return res.status(201).json({ data: serializeDeal(data) });
     } catch (error) {
         console.error("Unable to create deal", error);
         return res.status(500).json({ message: "Unable to create deal." });
@@ -131,7 +131,7 @@ export const updateDeal = async (req, res) => {
             .populate("owner", "username email")
             .lean();
         if (!updated) return res.status(404).json({ message: "Deal not found." });
-        return res.status(200).json({ data: updated });
+        return res.status(200).json({ data: serializeDeal(updated) });
     } catch (error) {
         console.error("Unable to update deal", error);
         return res.status(500).json({ message: "Unable to update deal." });

@@ -6,6 +6,37 @@ import { sendResponce } from "../../utils/utils.responce.js";
 
 const escapedEmail = (email) => String(email || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const createTokenPair = async (account, expectedRefreshToken = null) => {
+    const accessToken = jwt.sign(
+        { id: account._id, email: account.email, role: account.role },
+        process.env.ACCESS_TOKEN_SECRET || "access-secret",
+        { expiresIn: "15m" }
+    );
+    const refreshToken = jwt.sign(
+        { id: account._id },
+        process.env.REFRESH_TOKEN_SECRET || "refresh-secret",
+        { expiresIn: "7d" }
+    );
+    if (expectedRefreshToken) {
+        const rotation = await user.findOneAndUpdate(
+            { _id: account._id, refreshToken: expectedRefreshToken },
+            { refreshToken },
+            { new: true }
+        );
+        if (!rotation) return null;
+    } else {
+        await user.findByIdAndUpdate(account._id, { refreshToken });
+    }
+    return { accessToken, refreshToken };
+};
+
+const getPublicUser = (account) => ({
+    id: account._id,
+    username: account.username,
+    email: account.email,
+    role: account.role,
+});
+
 // Signup Controller
 export const signup = asyncHelper(async (req, res) => {
     const { username, password } = req.body;
@@ -27,29 +58,10 @@ export const signup = asyncHelper(async (req, res) => {
         password: hashedPassword,
     });
 
-    // Generate tokens
-    const accessToken = jwt.sign(
-        { id: newUser._id, email: newUser.email, role: newUser.role },
-        process.env.ACCESS_TOKEN_SECRET || "access-secret",
-        { expiresIn: "15m" }
-    );
-
-    const refreshToken = jwt.sign(
-        { id: newUser._id },
-        process.env.REFRESH_TOKEN_SECRET || "refresh-secret",
-        { expiresIn: "7d" }
-    );
-
-    // Save refresh token
-    await user.findByIdAndUpdate(newUser._id, { refreshToken });
+    const { accessToken, refreshToken } = await createTokenPair(newUser);
 
     return sendResponce(res, 201, true, "User registered successfully", {
-        user: {
-            id: newUser._id,
-            username: newUser.username,
-            email: newUser.email,
-            role: newUser.role,
-        },
+        user: getPublicUser(newUser),
         accessToken,
         refreshToken,
     });
@@ -74,30 +86,54 @@ export const login = asyncHelper(async (req, res) => {
         return sendResponce(res, 401, false, "Invalid credentials", null, "Incorrect password");
     }
 
-    // Generate tokens
-    const accessToken = jwt.sign(
-        { id: foundUser._id, email: foundUser.email, role: foundUser.role },
-        process.env.ACCESS_TOKEN_SECRET || "access-secret",
-        { expiresIn: "15m" }
-    );
-
-    const refreshToken = jwt.sign(
-        { id: foundUser._id },
-        process.env.REFRESH_TOKEN_SECRET || "refresh-secret",
-        { expiresIn: "7d" }
-    );
-
-    // Save refresh token
-    await user.findByIdAndUpdate(foundUser._id, { refreshToken });
+    const { accessToken, refreshToken } = await createTokenPair(foundUser);
 
     return sendResponce(res, 200, true, "Login successful", {
-        user: {
-            id: foundUser._id,
-            username: foundUser.username,
-            email: foundUser.email,
-            role: foundUser.role,
-        },
+        user: getPublicUser(foundUser),
         accessToken,
         refreshToken,
     });
+});
+
+export const refresh = asyncHelper(async (req, res) => {
+    const refreshToken = String(req.body?.refreshToken || "").trim();
+    if (!refreshToken) {
+        return sendResponce(res, 401, false, "Refresh token is required");
+    }
+
+    let decoded;
+    try {
+        decoded = jwt.verify(
+            refreshToken,
+            process.env.REFRESH_TOKEN_SECRET || "refresh-secret"
+        );
+    } catch {
+        return sendResponce(res, 401, false, "Refresh session expired. Please sign in again.");
+    }
+
+    if (!decoded.id) {
+        return sendResponce(res, 401, false, "Invalid refresh session. Please sign in again.");
+    }
+
+    const foundUser = await user.findOne({ _id: decoded.id, refreshToken });
+    if (!foundUser) {
+        return sendResponce(res, 401, false, "Refresh session is no longer valid. Please sign in again.");
+    }
+
+    const tokens = await createTokenPair(foundUser, refreshToken);
+    if (!tokens) {
+        return sendResponce(res, 401, false, "Refresh session is no longer valid. Please sign in again.");
+    }
+    return sendResponce(res, 200, true, "Session renewed", {
+        user: getPublicUser(foundUser),
+        ...tokens,
+    });
+});
+
+export const logout = asyncHelper(async (req, res) => {
+    const refreshToken = String(req.body?.refreshToken || "").trim();
+    if (refreshToken) {
+        await user.updateOne({ refreshToken }, { $unset: { refreshToken: 1 } });
+    }
+    return sendResponce(res, 200, true, "Signed out");
 });
